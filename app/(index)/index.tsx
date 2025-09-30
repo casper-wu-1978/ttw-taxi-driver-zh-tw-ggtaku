@@ -1,108 +1,296 @@
-import React from "react";
-import { Stack, router } from "expo-router";
-import { FlatList, Pressable, StyleSheet, View, Text } from "react-native";
-// Components
-import { IconCircle } from "@/components/IconCircle";
+
+import React, { useState, useEffect } from "react";
+import { Stack } from "expo-router";
+import { View, Text, StyleSheet, Pressable, Alert, Dimensions } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
-import { BodyScrollView } from "@/components/BodyScrollView";
 import { Button } from "@/components/button";
-// Constants & Hooks
-import { backgroundColors } from "@/constants/Colors";
+import { colors, commonStyles } from "@/styles/commonStyles";
+import * as Location from 'expo-location';
 
-const ICON_COLOR = "#007AFF";
+const { width, height } = Dimensions.get('window');
 
-export default function HomeScreen() {
+interface RideRequest {
+  id: string;
+  passengerName: string;
+  pickupAddress: string;
+  destinationAddress: string;
+  distance: string;
+  estimatedFare: string;
+  estimatedTime: string;
+  timestamp: Date;
+}
 
-  const modalDemos = [
-    {
-      title: "Standard Modal",
-      description: "Full screen modal presentation",
-      route: "/modal",
-      color: "#007AFF",
-    },
-    {
-      title: "Form Sheet",
-      description: "Bottom sheet with detents and grabber",
-      route: "/formsheet",
-      color: "#34C759",
-    },
-    {
-      title: "Transparent Modal",
-      description: "Overlay without obscuring background",
-      route: "/transparent-modal",
-      color: "#FF9500",
+export default function TaxiDriverApp() {
+  const [isOnline, setIsOnline] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<string>("正在定位中...");
+  const [activeRide, setActiveRide] = useState<RideRequest | null>(null);
+  const [incomingRequest, setIncomingRequest] = useState<RideRequest | null>(null);
+  const [rideStatus, setRideStatus] = useState<'idle' | 'heading_to_pickup' | 'passenger_onboard' | 'completed'>('idle');
+
+  // Mock ride request for demo
+  const mockRideRequest: RideRequest = {
+    id: "R001",
+    passengerName: "王小明",
+    pickupAddress: "台北市信義區信義路五段7號",
+    destinationAddress: "台北市大安區敦化南路二段216號",
+    distance: "3.2公里",
+    estimatedFare: "NT$180",
+    estimatedTime: "12分鐘",
+    timestamp: new Date()
+  };
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  useEffect(() => {
+    // Simulate incoming ride request when online
+    if (isOnline && !incomingRequest && !activeRide) {
+      const timer = setTimeout(() => {
+        setIncomingRequest(mockRideRequest);
+      }, 5000);
+      return () => clearTimeout(timer);
     }
-  ];
+  }, [isOnline, incomingRequest, activeRide]);
 
-  const renderModalDemo = ({ item }: { item: typeof modalDemos[0] }) => (
-    <View style={styles.demoCard}>
-      <View style={[styles.demoIcon, { backgroundColor: item.color }]}>
-        <IconSymbol name="square.grid.3x3" color="white" size={24} />
+  const getCurrentLocation = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setCurrentLocation("無法取得位置權限");
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      // Mock address for demo
+      setCurrentLocation("台北市中正區重慶南路一段122號");
+    } catch (error) {
+      console.log('Location error:', error);
+      setCurrentLocation("定位失敗");
+    }
+  };
+
+  const toggleOnlineStatus = () => {
+    setIsOnline(!isOnline);
+    if (isOnline) {
+      setIncomingRequest(null);
+      setActiveRide(null);
+      setRideStatus('idle');
+    }
+  };
+
+  const acceptRideRequest = () => {
+    if (incomingRequest) {
+      setActiveRide(incomingRequest);
+      setIncomingRequest(null);
+      setRideStatus('heading_to_pickup');
+      Alert.alert("接單成功", "正在前往接客地點");
+    }
+  };
+
+  const rejectRideRequest = () => {
+    setIncomingRequest(null);
+    Alert.alert("已拒絕", "訂單已拒絕");
+  };
+
+  const updateRideStatus = () => {
+    if (rideStatus === 'heading_to_pickup') {
+      setRideStatus('passenger_onboard');
+      Alert.alert("乘客已上車", "請前往目的地");
+    } else if (rideStatus === 'passenger_onboard') {
+      setRideStatus('completed');
+      Alert.alert("行程完成", "感謝您的服務！");
+      setTimeout(() => {
+        setActiveRide(null);
+        setRideStatus('idle');
+      }, 2000);
+    }
+  };
+
+  const renderStatusCard = () => (
+    <View style={styles.statusCard}>
+      <View style={styles.statusHeader}>
+        <View style={[styles.statusIndicator, { backgroundColor: isOnline ? '#4CAF50' : '#F44336' }]} />
+        <Text style={styles.statusText}>
+          {isOnline ? '線上接單中' : '離線狀態'}
+        </Text>
       </View>
-      <View style={styles.demoContent}>
-        <Text style={styles.demoTitle}>{item.title}</Text>
-        <Text style={styles.demoDescription}>{item.description}</Text>
-      </View>
+      <Text style={styles.locationText}>目前位置：{currentLocation}</Text>
       <Button
-        variant="outline"
-        size="sm"
-        onPress={() => router.push(item.route as any)}
+        onPress={toggleOnlineStatus}
+        style={[styles.toggleButton, { backgroundColor: isOnline ? '#F44336' : '#4CAF50' }]}
       >
-        Try It
+        {isOnline ? '下線' : '上線'}
       </Button>
     </View>
   );
 
-  const renderEmptyList = () => (
-    <BodyScrollView contentContainerStyle={styles.emptyStateContainer}>
-      <IconCircle
-        emoji=""
-        backgroundColor={
-          backgroundColors[Math.floor(Math.random() * backgroundColors.length)]
-        }
-      />
-    </BodyScrollView>
-  );
+  const renderIncomingRequest = () => {
+    if (!incomingRequest) return null;
 
-  const renderHeaderRight = () => (
-    <Pressable
-      onPress={() => {console.log("plus")}}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol name="plus" color={ICON_COLOR} />
-    </Pressable>
-  );
+    return (
+      <View style={styles.requestCard}>
+        <View style={styles.requestHeader}>
+          <IconSymbol name="car" size={24} color="#FF9500" />
+          <Text style={styles.requestTitle}>新訂單</Text>
+        </View>
+        
+        <View style={styles.requestDetails}>
+          <Text style={styles.passengerName}>乘客：{incomingRequest.passengerName}</Text>
+          
+          <View style={styles.addressContainer}>
+            <View style={styles.addressRow}>
+              <IconSymbol name="location" size={16} color="#4CAF50" />
+              <Text style={styles.addressLabel}>上車地點：</Text>
+            </View>
+            <Text style={styles.addressText}>{incomingRequest.pickupAddress}</Text>
+          </View>
 
-  const renderHeaderLeft = () => (
-    <Pressable
-      onPress={() => {console.log("gear")}}
-      style={styles.headerButtonContainer}
-    >
-      <IconSymbol
-        name="gear"
-        color={ICON_COLOR}
-      />
-    </Pressable>
+          <View style={styles.addressContainer}>
+            <View style={styles.addressRow}>
+              <IconSymbol name="flag" size={16} color="#F44336" />
+              <Text style={styles.addressLabel}>目的地：</Text>
+            </View>
+            <Text style={styles.addressText}>{incomingRequest.destinationAddress}</Text>
+          </View>
+
+          <View style={styles.rideInfo}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>距離</Text>
+              <Text style={styles.infoValue}>{incomingRequest.distance}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>預估車資</Text>
+              <Text style={styles.infoValue}>{incomingRequest.estimatedFare}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>預估時間</Text>
+              <Text style={styles.infoValue}>{incomingRequest.estimatedTime}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.requestActions}>
+          <Button
+            onPress={rejectRideRequest}
+            style={styles.rejectButton}
+            textStyle={styles.actionButtonText}
+          >
+            拒絕
+          </Button>
+          <Button
+            onPress={acceptRideRequest}
+            style={styles.acceptButton}
+            textStyle={styles.actionButtonText}
+          >
+            接受
+          </Button>
+        </View>
+      </View>
+    );
+  };
+
+  const renderActiveRide = () => {
+    if (!activeRide) return null;
+
+    const getStatusText = () => {
+      switch (rideStatus) {
+        case 'heading_to_pickup':
+          return '前往接客地點';
+        case 'passenger_onboard':
+          return '乘客已上車';
+        case 'completed':
+          return '行程完成';
+        default:
+          return '';
+      }
+    };
+
+    const getActionButtonText = () => {
+      switch (rideStatus) {
+        case 'heading_to_pickup':
+          return '已到達接客點';
+        case 'passenger_onboard':
+          return '完成行程';
+        default:
+          return '';
+      }
+    };
+
+    return (
+      <View style={styles.activeRideCard}>
+        <View style={styles.rideStatusHeader}>
+          <IconSymbol name="car.fill" size={24} color="#2196F3" />
+          <Text style={styles.rideStatusText}>{getStatusText()}</Text>
+        </View>
+
+        <View style={styles.rideDetails}>
+          <Text style={styles.passengerName}>乘客：{activeRide.passengerName}</Text>
+          
+          <View style={styles.addressContainer}>
+            <View style={styles.addressRow}>
+              <IconSymbol name="location" size={16} color="#4CAF50" />
+              <Text style={styles.addressLabel}>上車地點：</Text>
+            </View>
+            <Text style={styles.addressText}>{activeRide.pickupAddress}</Text>
+          </View>
+
+          <View style={styles.addressContainer}>
+            <View style={styles.addressRow}>
+              <IconSymbol name="flag" size={16} color="#F44336" />
+              <Text style={styles.addressLabel}>目的地：</Text>
+            </View>
+            <Text style={styles.addressText}>{activeRide.destinationAddress}</Text>
+          </View>
+
+          <View style={styles.fareInfo}>
+            <Text style={styles.fareLabel}>預估車資：</Text>
+            <Text style={styles.fareValue}>{activeRide.estimatedFare}</Text>
+          </View>
+        </View>
+
+        {rideStatus !== 'completed' && (
+          <Button
+            onPress={updateRideStatus}
+            style={styles.actionButton}
+          >
+            {getActionButtonText()}
+          </Button>
+        )}
+      </View>
+    );
+  };
+
+  const renderMapPlaceholder = () => (
+    <View style={styles.mapPlaceholder}>
+      <IconSymbol name="map" size={48} color="#9E9E9E" />
+      <Text style={styles.mapPlaceholderText}>
+        地圖功能在 Natively 中暫不支援
+      </Text>
+      <Text style={styles.mapPlaceholderSubtext}>
+        react-native-maps 目前無法在此環境中使用
+      </Text>
+    </View>
   );
 
   return (
     <>
       <Stack.Screen
         options={{
-          title: "Building the app...",
-          headerRight: renderHeaderRight,
-          headerLeft: renderHeaderLeft,
+          title: "TTW-TAXI 司機端",
+          headerStyle: { backgroundColor: '#2196F3' },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: { fontWeight: 'bold' },
         }}
       />
       <View style={styles.container}>
-        <FlatList
-          data={modalDemos}
-          renderItem={renderModalDemo}
-          keyExtractor={(item) => item.route}
-          contentContainerStyle={styles.listContainer}
-          contentInsetAdjustmentBehavior="automatic"
-          showsVerticalScrollIndicator={false}
-        />
+        {renderMapPlaceholder()}
+        
+        <View style={styles.contentContainer}>
+          {renderStatusCard()}
+          {incomingRequest && renderIncomingRequest()}
+          {activeRide && renderActiveRide()}
+        </View>
       </View>
     </>
   );
@@ -111,71 +299,210 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F5F5F5',
   },
-  headerSection: {
-    padding: 20,
-    paddingBottom: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e5',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    lineHeight: 22,
-  },
-  listContainer: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-  },
-  demoCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  demoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  mapPlaceholder: {
+    height: height * 0.4,
+    backgroundColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#BDBDBD',
   },
-  demoContent: {
+  mapPlaceholderText: {
+    fontSize: 16,
+    color: '#757575',
+    marginTop: 12,
+    fontWeight: '500',
+  },
+  mapPlaceholderSubtext: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  contentContainer: {
     flex: 1,
+    padding: 16,
   },
-  demoTitle: {
+  statusCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statusIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  statusText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#333333',
+  },
+  locationText: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  toggleButton: {
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  requestCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9500',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  requestHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  requestTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FF9500',
+    marginLeft: 8,
+  },
+  requestDetails: {
+    marginBottom: 16,
+  },
+  passengerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 12,
+  },
+  addressContainer: {
+    marginBottom: 12,
+  },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  demoDescription: {
+  addressLabel: {
     fontSize: 14,
-    color: '#666',
-    lineHeight: 18,
+    fontWeight: '500',
+    color: '#666666',
+    marginLeft: 4,
   },
-  emptyStateContainer: {
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 100,
+  addressText: {
+    fontSize: 14,
+    color: '#333333',
+    lineHeight: 20,
+    paddingLeft: 20,
   },
-  headerButtonContainer: {
-    padding: 6, // Just enough padding around the 24px icon
+  rideInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  infoItem: {
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  requestActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  rejectButton: {
+    flex: 1,
+    backgroundColor: '#F44336',
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  activeRideCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  rideStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  rideStatusText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2196F3',
+    marginLeft: 8,
+  },
+  rideDetails: {
+    marginBottom: 16,
+  },
+  fareInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  fareLabel: {
+    fontSize: 16,
+    color: '#666666',
+  },
+  fareValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+  actionButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    paddingVertical: 12,
   },
 });
