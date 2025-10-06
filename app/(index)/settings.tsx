@@ -1,12 +1,23 @@
 
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, TextInput } from "react-native";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/button";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import AuthGuard from "@/components/AuthGuard";
 import { Stack } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors, commonStyles } from "@/styles/commonStyles";
-import { useAuth } from "@/contexts/AuthContext";
-import AuthGuard from "@/components/AuthGuard";
+import { supabase } from "@/lib/supabase";
+
+interface DriverProfile {
+  display_name: string;
+  phone: string;
+  vehicle_type: string;
+  vehicle_plate: string;
+  vehicle_model: string;
+  vehicle_color: string;
+  license_number: string;
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -14,8 +25,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    padding: 20,
     backgroundColor: colors.surface,
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -23,24 +34,19 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  content: {
-    flex: 1,
+    textAlign: 'center',
   },
   profileSection: {
-    padding: 20,
     backgroundColor: colors.surface,
-    marginBottom: 12,
+    margin: 20,
+    borderRadius: 16,
+    padding: 20,
+    ...commonStyles.shadow,
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   avatar: {
     width: 60,
@@ -61,33 +67,39 @@ const styles = StyleSheet.create({
   },
   profileName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: colors.text,
     marginBottom: 4,
   },
-  profileEmail: {
+  profileDetails: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: 2,
   },
-  profileType: {
+  editButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  editButtonText: {
+    color: colors.surface,
     fontSize: 12,
-    color: colors.primary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   section: {
     backgroundColor: colors.surface,
-    marginBottom: 12,
-  },
-  sectionHeader: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 12,
+    ...commonStyles.shadow,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: colors.text,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   settingItem: {
     flexDirection: 'row',
@@ -114,35 +126,204 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
-  settingAction: {
-    marginLeft: 8,
+  settingValue: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '600',
   },
   logoutButton: {
-    margin: 20,
     backgroundColor: colors.error,
+    margin: 20,
+    borderRadius: 12,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: colors.textSecondary,
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: colors.primary,
+  },
+  statsCard: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  statsLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  statsValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
   },
 });
 
 function SettingsScreen() {
   const { user, profile, driver, signOut, updateProfile } = useAuth();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(
-    profile?.notifications_enabled ?? true
-  );
-  const [locationSharing, setLocationSharing] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [autoAcceptEnabled, setAutoAcceptEnabled] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<DriverProfile>({
+    display_name: '',
+    phone: '',
+    vehicle_type: '',
+    vehicle_plate: '',
+    vehicle_model: '',
+    vehicle_color: '',
+    license_number: '',
+  });
+  const [driverStats, setDriverStats] = useState({
+    rating: 5.0,
+    totalRides: 0,
+    completionRate: 100,
+    totalEarnings: 0,
+  });
+
+  useEffect(() => {
+    loadDriverData();
+    loadDriverStats();
+  }, [driver]);
+
+  const loadDriverData = () => {
+    if (driver) {
+      setEditingProfile({
+        display_name: driver.display_name || '',
+        phone: driver.phone || '',
+        vehicle_type: driver.vehicle_type || '',
+        vehicle_plate: driver.vehicle_plate || '',
+        vehicle_model: driver.vehicle_model || '',
+        vehicle_color: driver.vehicle_color || '',
+        license_number: driver.license_number || '',
+      });
+    }
+    
+    if (profile) {
+      setNotificationsEnabled(profile.notifications_enabled);
+    }
+  };
+
+  const loadDriverStats = async () => {
+    if (!driver?.id) return;
+
+    try {
+      // 獲取司機統計數據
+      const { data: driverData } = await supabase
+        .from('drivers')
+        .select('rating, total_rides')
+        .eq('id', driver.id)
+        .single();
+
+      // 獲取總收益
+      const { data: earningsData } = await supabase
+        .from('driver_financial_records')
+        .select('amount')
+        .eq('driver_id', driver.id)
+        .eq('transaction_type', 'earning');
+
+      const totalEarnings = earningsData?.reduce((sum, record) => sum + record.amount, 0) || 0;
+
+      // 計算完成率
+      const { data: completedRides } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('driver_id', driver.id)
+        .eq('status', 'completed');
+
+      const { data: totalBookings } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('driver_id', driver.id);
+
+      const completionRate = totalBookings?.length > 0 
+        ? Math.round((completedRides?.length || 0) / totalBookings.length * 100)
+        : 100;
+
+      setDriverStats({
+        rating: driverData?.rating || 5.0,
+        totalRides: driverData?.total_rides || 0,
+        completionRate,
+        totalEarnings,
+      });
+    } catch (error) {
+      console.error('Error loading driver stats:', error);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
       '登出確認',
-      '確定要登出嗎？',
+      '確定要登出嗎？登出後將自動下線。',
       [
-        {
-          text: '取消',
-          style: 'cancel',
-        },
+        { text: '取消', style: 'cancel' },
         {
           text: '登出',
           style: 'destructive',
           onPress: async () => {
+            // 先將司機狀態設為離線
+            if (driver?.id) {
+              await supabase
+                .from('drivers')
+                .update({ status: 'offline' })
+                .eq('id', driver.id);
+            }
+            
             const { error } = await signOut();
             if (error) {
               Alert.alert('錯誤', '登出失敗，請稍後再試');
@@ -155,53 +336,102 @@ function SettingsScreen() {
 
   const handleNotificationToggle = async (value: boolean) => {
     setNotificationsEnabled(value);
-    if (updateProfile) {
-      const { error } = await updateProfile({ notifications_enabled: value });
+    
+    if (profile) {
+      const { error } = await updateProfile({
+        notifications_enabled: value,
+      });
+      
       if (error) {
-        console.error('Error updating notifications setting:', error);
-        setNotificationsEnabled(!value); // Revert on error
         Alert.alert('錯誤', '更新設定失敗');
+        setNotificationsEnabled(!value); // 回復原狀態
       }
     }
   };
 
-  const renderDriverProfile = () => {
-    const displayName = profile?.display_name || user?.email || '用戶';
-    const initials = displayName.charAt(0).toUpperCase();
-
-    return (
-      <View style={styles.profileSection}>
-        <View style={styles.profileHeader}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{displayName}</Text>
-            <Text style={styles.profileEmail}>{user?.email}</Text>
-            <Text style={styles.profileType}>
-              {profile?.user_type === 'driver' ? '司機' : '乘客'}
-            </Text>
-          </View>
-        </View>
-        
-        {profile?.user_type === 'driver' && driver && (
-          <View>
-            <Text style={styles.settingSubtitle}>
-              評分: {driver.rating?.toFixed(1) || '5.0'} ⭐ | 
-              總行程: {driver.total_rides || 0} | 
-              狀態: {driver.status === 'online' ? '線上' : '離線'}
-            </Text>
-          </View>
-        )}
-      </View>
-    );
+  const handleAutoAcceptToggle = (value: boolean) => {
+    setAutoAcceptEnabled(value);
+    // 這裡可以保存到本地存儲或資料庫
   };
+
+  const handleEditProfile = () => {
+    setShowEditModal(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      if (driver?.id) {
+        const { error } = await supabase
+          .from('drivers')
+          .update({
+            display_name: editingProfile.display_name,
+            phone: editingProfile.phone,
+            vehicle_type: editingProfile.vehicle_type,
+            vehicle_plate: editingProfile.vehicle_plate,
+            vehicle_model: editingProfile.vehicle_model,
+            vehicle_color: editingProfile.vehicle_color,
+            license_number: editingProfile.license_number,
+          })
+          .eq('id', driver.id);
+
+        if (error) {
+          Alert.alert('錯誤', '更新資料失敗，請稍後再試');
+          return;
+        }
+
+        Alert.alert('成功', '個人資料已更新');
+        setShowEditModal(false);
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('錯誤', '更新資料失敗，請稍後再試');
+    }
+  };
+
+  const renderDriverProfile = () => (
+    <View style={styles.profileSection}>
+      <View style={styles.profileHeader}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {(driver?.display_name || profile?.display_name || '司機')[0]}
+          </Text>
+        </View>
+        <View style={styles.profileInfo}>
+          <Text style={styles.profileName}>
+            {driver?.display_name || profile?.display_name || '未設定姓名'}
+          </Text>
+          <Text style={styles.profileDetails}>
+            {driver?.vehicle_type || '計程車'} • {driver?.vehicle_plate || '未設定車牌'}
+          </Text>
+          <Text style={styles.profileDetails}>
+            評分: ⭐ {driverStats.rating.toFixed(1)} • 總行程: {driverStats.totalRides}
+          </Text>
+        </View>
+        <Pressable style={styles.editButton} onPress={handleEditProfile}>
+          <Text style={styles.editButtonText}>編輯</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.statsCard}>
+        <View style={styles.statsRow}>
+          <Text style={styles.statsLabel}>完成率</Text>
+          <Text style={styles.statsValue}>{driverStats.completionRate}%</Text>
+        </View>
+        <View style={styles.statsRow}>
+          <Text style={styles.statsLabel}>總收益</Text>
+          <Text style={styles.statsValue}>NT$ {driverStats.totalEarnings.toLocaleString()}</Text>
+        </View>
+        <View style={styles.statsRow}>
+          <Text style={styles.statsLabel}>駕照號碼</Text>
+          <Text style={styles.statsValue}>{driver?.license_number || '未設定'}</Text>
+        </View>
+      </View>
+    </View>
+  );
 
   const renderSettingsSection = (title: string, children: React.ReactNode) => (
     <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-      </View>
+      <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
   );
@@ -210,26 +440,125 @@ function SettingsScreen() {
     icon: string,
     title: string,
     subtitle?: string,
-    action?: React.ReactNode,
+    value?: string,
     onPress?: () => void,
+    rightComponent?: React.ReactNode,
     isLast?: boolean
   ) => (
     <Pressable
       style={[styles.settingItem, isLast && styles.settingItemLast]}
       onPress={onPress}
-      disabled={!onPress}
     >
       <IconSymbol name={icon} size={20} color={colors.primary} style={styles.settingIcon} />
       <View style={styles.settingContent}>
         <Text style={styles.settingTitle}>{title}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        {value && <Text style={styles.settingValue}>{value}</Text>}
       </View>
-      {action && <View style={styles.settingAction}>{action}</View>}
-      {onPress && !action && (
-        <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
-      )}
+      {rightComponent}
     </Pressable>
   );
+
+  const renderEditModal = () => {
+    if (!showEditModal) return null;
+
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>編輯個人資料</Text>
+          
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>姓名</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.display_name}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, display_name: text }))}
+                placeholder="請輸入姓名"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>電話</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.phone}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, phone: text }))}
+                placeholder="請輸入電話號碼"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>車輛類型</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.vehicle_type}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, vehicle_type: text }))}
+                placeholder="例如：計程車、轎車"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>車牌號碼</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.vehicle_plate}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, vehicle_plate: text }))}
+                placeholder="請輸入車牌號碼"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>車輛型號</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.vehicle_model}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, vehicle_model: text }))}
+                placeholder="例如：Toyota Camry"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>車輛顏色</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.vehicle_color}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, vehicle_color: text }))}
+                placeholder="例如：白色、黑色"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>駕照號碼</Text>
+              <TextInput
+                style={styles.input}
+                value={editingProfile.license_number}
+                onChangeText={(text) => setEditingProfile(prev => ({ ...prev, license_number: text }))}
+                placeholder="請輸入駕照號碼"
+              />
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <Button
+              onPress={() => setShowEditModal(false)}
+              variant="secondary"
+              style={styles.cancelButton}
+            >
+              取消
+            </Button>
+            <Button
+              onPress={handleSaveProfile}
+              style={styles.saveButton}
+            >
+              儲存
+            </Button>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -237,10 +566,9 @@ function SettingsScreen() {
       
       <View style={styles.header}>
         <Text style={styles.headerTitle}>設定</Text>
-        <Text style={styles.headerSubtitle}>管理您的帳號和應用程式設定</Text>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         {renderDriverProfile()}
 
         {renderSettingsSection(
@@ -249,109 +577,86 @@ function SettingsScreen() {
             {renderSettingItem(
               'bell',
               '推播通知',
-              '接收新訂單和重要訊息',
+              '接收新訂單和重要訊息通知',
+              undefined,
+              undefined,
               <Switch
                 value={notificationsEnabled}
                 onValueChange={handleNotificationToggle}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor={colors.surface}
-              />,
-              undefined,
-              false
+              />
             )}
             {renderSettingItem(
-              'location',
-              '位置分享',
-              '允許乘客查看您的位置',
+              'checkmark.circle',
+              '自動接單',
+              '符合條件的訂單自動接受',
+              undefined,
+              undefined,
               <Switch
-                value={locationSharing}
-                onValueChange={setLocationSharing}
+                value={autoAcceptEnabled}
+                onValueChange={handleAutoAcceptToggle}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor={colors.surface}
               />,
-              undefined,
               true
             )}
           </>
         )}
 
         {renderSettingsSection(
-          '帳號管理',
+          '帳戶管理',
           <>
             {renderSettingItem(
               'person.circle',
               '個人資料',
-              '編輯您的個人資訊',
+              '編輯個人和車輛資訊',
               undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
-              false
-            )}
-            {renderSettingItem(
-              'key',
-              '更改密碼',
-              '更新您的登入密碼',
-              undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
-              false
+              handleEditProfile
             )}
             {renderSettingItem(
               'creditcard',
-              '付款方式',
-              '管理您的付款資訊',
+              '收款設定',
+              '設定收款方式和帳戶',
               undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
-              true
-            )}
-          </>
-        )}
-
-        {profile?.user_type === 'driver' && renderSettingsSection(
-          '司機設定',
-          <>
-            {renderSettingItem(
-              'car',
-              '車輛資訊',
-              '管理您的車輛資料',
-              undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
-              false
+              () => Alert.alert('功能開發中', '此功能正在開發中，敬請期待')
             )}
             {renderSettingItem(
               'doc.text',
-              '證件管理',
-              '上傳和管理駕照等證件',
+              '服務條款',
+              '查看使用條款和隱私政策',
               undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              () => Alert.alert('服務條款', '功能開發中，敬請期待'),
+              undefined,
               true
             )}
           </>
         )}
 
         {renderSettingsSection(
-          '應用程式',
+          '支援與回饋',
           <>
             {renderSettingItem(
               'questionmark.circle',
-              '幫助與支援',
-              '常見問題和客服聯絡',
+              '幫助中心',
+              '常見問題和使用說明',
               undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
-              false
+              () => Alert.alert('幫助中心', '功能開發中，敬請期待')
             )}
             {renderSettingItem(
-              'info.circle',
-              '關於應用程式',
-              '版本資訊和使用條款',
-              undefined,
-              () => Alert.alert('關於', 'TTW-TAXI v1.0.0\n司機端應用程式'),
-              false
+              'phone',
+              '聯繫客服',
+              '24小時客服熱線',
+              '0800-123-456',
+              () => Alert.alert('客服電話', '0800-123-456\n\n服務時間：24小時')
             )}
             {renderSettingItem(
               'star',
-              '評價應用程式',
-              '在應用程式商店給我們評分',
+              '評價應用',
+              '給我們評分和建議',
               undefined,
-              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              () => Alert.alert('評價應用', '感謝您的支持！'),
+              undefined,
               true
             )}
           </>
@@ -360,11 +665,12 @@ function SettingsScreen() {
         <Button
           onPress={handleLogout}
           style={styles.logoutButton}
-          variant="primary"
         >
           登出
         </Button>
       </ScrollView>
+
+      {renderEditModal()}
     </View>
   );
 }

@@ -62,3 +62,60 @@ export interface Driver {
   push_token?: string;
   vehicle_color?: string;
 }
+
+export interface Booking {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  line_user_id: string;
+  pickup_address: string;
+  destination_address: string;
+  passenger_count: number;
+  vehicle_type: string;
+  booking_type: string;
+  scheduled_at?: string;
+  distance_km?: number;
+  duration_min?: number;
+  fare_min?: number;
+  fare_max?: number;
+  status: 'pending' | 'driver_accepted_pending_passenger' | 'accepted' | 'picking_up' | 'driver_arrived' | 'passenger_on_board' | 'completed' | 'cancelled';
+  driver_id?: string;
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  destination_latitude?: number;
+  destination_longitude?: number;
+  accepted_at?: string;
+  pickup_at?: string;
+  completed_at?: string;
+  coupon_id?: string;
+  discount_amount?: number;
+  original_fare?: number;
+  luggage_requirements?: string;
+  notes?: string;
+  estimated_fare?: number;
+  final_fare?: number;
+  final_distance_km?: number;
+  driver_arrived_at?: string;
+}
+
+export interface DriverFinancialRecord {
+  id: string;
+  driver_id: string;
+  booking_id?: string;
+  transaction_type: string;
+  amount: number;
+  description?: string;
+  week_start_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DriverRating {
+  id: string;
+  booking_id: string;
+  line_user_id: string;
+  driver_id: string;
+  rating: number;
+  comment?: string;
+  created_at: string;
+}

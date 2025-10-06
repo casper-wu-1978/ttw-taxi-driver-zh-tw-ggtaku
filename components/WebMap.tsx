@@ -1,8 +1,9 @@
 
-import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { IconSymbol } from './IconSymbol';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from './button';
+import { colors } from '@/styles/commonStyles';
 
 interface WebMapProps {
   currentCoords: { lat: number; lng: number } | null;
@@ -11,27 +12,110 @@ interface WebMapProps {
   isOnline: boolean;
 }
 
-export default function WebMap({ 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    position: 'relative',
+  },
+  mapContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  webNotSupported: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    padding: 20,
+  },
+  notSupportedTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  notSupportedText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: colors.text,
+  },
+  mapLegend: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 12,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 12,
+    color: colors.text,
+  },
+});
+
+const WebMap: React.FC<WebMapProps> = ({ 
   currentCoords, 
   pickupLocation, 
   destinationLocation, 
   isOnline 
-}: WebMapProps) {
+}) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [mapError, setMapError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<{
-    driver?: any;
-    pickup?: any;
-    destination?: any;
-  }>({});
+  const markersRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (Platform.OS !== 'web') return;
-
-    loadLeafletAndInitializeMap();
+    if (Platform.OS === 'web') {
+      loadLeafletAndInitializeMap();
+    }
   }, []);
 
   useEffect(() => {
@@ -42,98 +126,69 @@ export default function WebMap({
 
   const loadLeafletAndInitializeMap = async () => {
     try {
-      setIsLoading(true);
-      setMapError(null);
-
-      // 檢查是否已經載入 Leaflet
-      if (window.L) {
-        initializeMap();
-        return;
-      }
-
-      // 載入 Leaflet CSS
-      const existingLink = document.querySelector('link[href*="leaflet"]');
-      if (!existingLink) {
+      setMapError(false);
+      
+      // 動態載入 Leaflet
+      if (typeof window !== 'undefined' && !window.L) {
+        // 載入 CSS
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        link.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-        link.crossOrigin = '';
         document.head.appendChild(link);
-      }
 
-      // 載入 Leaflet JS
-      const existingScript = document.querySelector('script[src*="leaflet"]');
-      if (!existingScript) {
+        // 載入 JS
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-        script.crossOrigin = '';
         script.onload = () => {
-          console.log('Leaflet 載入成功');
-          initializeMap();
+          setTimeout(initializeMap, 100);
         };
         script.onerror = () => {
-          console.error('Leaflet 載入失敗');
-          setMapError('無法載入地圖庫，請檢查網路連線');
-          setIsLoading(false);
+          setMapError(true);
         };
         document.head.appendChild(script);
-      } else {
-        // Script already exists, initialize map
+      } else if (window.L) {
         initializeMap();
       }
     } catch (error) {
-      console.error('載入 Leaflet 錯誤:', error);
-      setMapError('地圖初始化失敗');
-      setIsLoading(false);
+      console.error('Error loading Leaflet:', error);
+      setMapError(true);
     }
   };
 
   const initializeMap = () => {
-    if (!mapRef.current || !window.L) {
-      console.error('地圖容器或 Leaflet 庫不可用');
-      setMapError('地圖容器初始化失敗');
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const defaultLat = currentCoords?.lat || 25.0330;
-      const defaultLng = currentCoords?.lng || 121.5654;
+      if (!mapRef.current || !window.L) return;
 
-      // 清理現有地圖實例
+      // 清除現有地圖
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
       }
+
+      // 設定預設位置（台北車站）
+      const defaultLat = currentCoords?.lat || 25.0478;
+      const defaultLng = currentCoords?.lng || 121.5170;
 
       // 創建地圖
       const map = window.L.map(mapRef.current, {
         center: [defaultLat, defaultLng],
         zoom: 15,
         zoomControl: true,
-        attributionControl: true,
+        attributionControl: false,
       });
 
-      // 添加地圖圖層
+      // 添加圖層
       window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        attribution: '© OpenStreetMap contributors',
         maxZoom: 19,
       }).addTo(map);
 
       mapInstanceRef.current = map;
       setMapLoaded(true);
-      setMapError(null);
-      setIsLoading(false);
-
-      console.log('地圖初始化成功');
-
-      // 初始化標記
-      updateMapMarkers();
+      
+      console.log('Map initialized successfully');
     } catch (error) {
-      console.error('地圖初始化錯誤:', error);
-      setMapError(`地圖初始化失敗: ${error instanceof Error ? error.message : '未知錯誤'}`);
-      setIsLoading(false);
+      console.error('Error initializing map:', error);
+      setMapError(true);
     }
   };
 
@@ -142,120 +197,91 @@ export default function WebMap({
 
     try {
       // 清除現有標記
-      Object.values(markersRef.current).forEach(marker => {
-        if (marker) {
-          mapInstanceRef.current.removeLayer(marker);
-        }
+      markersRef.current.forEach(marker => {
+        mapInstanceRef.current.removeLayer(marker);
       });
-      markersRef.current = {};
+      markersRef.current = [];
 
       const bounds = [];
 
       // 添加司機位置標記
       if (currentCoords) {
         const driverIcon = window.L.divIcon({
-          html: `
-            <div style="
-              background-color: ${isOnline ? '#2196F3' : '#9E9E9E'};
-              width: 24px;
-              height: 24px;
-              border-radius: 50%;
-              border: 3px solid white;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <div style="
-                color: white;
-                font-size: 12px;
-                font-weight: bold;
-              ">🚗</div>
-            </div>
-          `,
+          html: `<div style="
+            width: 20px; 
+            height: 20px; 
+            background-color: ${isOnline ? '#34C759' : '#FF3B30'}; 
+            border: 3px solid white; 
+            border-radius: 50%; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          "></div>`,
           className: 'driver-marker',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12]
+          iconSize: [20, 20],
+          iconAnchor: [10, 10],
         });
 
-        markersRef.current.driver = window.L.marker([currentCoords.lat, currentCoords.lng], { 
-          icon: driverIcon 
-        })
-          .addTo(mapInstanceRef.current)
-          .bindPopup(`司機位置 ${isOnline ? '(線上)' : '(離線)'}`);
+        const driverMarker = window.L.marker([currentCoords.lat, currentCoords.lng], {
+          icon: driverIcon
+        }).addTo(mapInstanceRef.current);
 
+        driverMarker.bindPopup(`
+          <div style="text-align: center;">
+            <strong>您的位置</strong><br>
+            狀態: ${isOnline ? '線上' : '離線'}
+          </div>
+        `);
+
+        markersRef.current.push(driverMarker);
         bounds.push([currentCoords.lat, currentCoords.lng]);
       }
 
-      // 添加接客點標記
+      // 添加上車點標記
       if (pickupLocation) {
         const pickupIcon = window.L.divIcon({
-          html: `
-            <div style="
-              background-color: #4CAF50;
-              width: 20px;
-              height: 20px;
-              border-radius: 50%;
-              border: 2px solid white;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <div style="
-                color: white;
-                font-size: 10px;
-                font-weight: bold;
-              ">📍</div>
-            </div>
-          `,
+          html: `<div style="
+            width: 16px; 
+            height: 16px; 
+            background-color: #007AFF; 
+            border: 2px solid white; 
+            border-radius: 50%; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          "></div>`,
           className: 'pickup-marker',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10]
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
         });
 
-        markersRef.current.pickup = window.L.marker([pickupLocation.lat, pickupLocation.lng], { 
-          icon: pickupIcon 
-        })
-          .addTo(mapInstanceRef.current)
-          .bindPopup('接客點');
+        const pickupMarker = window.L.marker([pickupLocation.lat, pickupLocation.lng], {
+          icon: pickupIcon
+        }).addTo(mapInstanceRef.current);
 
+        pickupMarker.bindPopup('<div style="text-align: center;"><strong>上車點</strong></div>');
+        markersRef.current.push(pickupMarker);
         bounds.push([pickupLocation.lat, pickupLocation.lng]);
       }
 
       // 添加目的地標記
       if (destinationLocation) {
         const destIcon = window.L.divIcon({
-          html: `
-            <div style="
-              background-color: #F44336;
-              width: 20px;
-              height: 20px;
-              border-radius: 50%;
-              border: 2px solid white;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <div style="
-                color: white;
-                font-size: 10px;
-                font-weight: bold;
-              ">🏁</div>
-            </div>
-          `,
+          html: `<div style="
+            width: 16px; 
+            height: 16px; 
+            background-color: #FF9500; 
+            border: 2px solid white; 
+            border-radius: 50%; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          "></div>`,
           className: 'destination-marker',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10]
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
         });
 
-        markersRef.current.destination = window.L.marker([destinationLocation.lat, destinationLocation.lng], { 
-          icon: destIcon 
-        })
-          .addTo(mapInstanceRef.current)
-          .bindPopup('目的地');
+        const destMarker = window.L.marker([destinationLocation.lat, destinationLocation.lng], {
+          icon: destIcon
+        }).addTo(mapInstanceRef.current);
 
+        destMarker.bindPopup('<div style="text-align: center;"><strong>目的地</strong></div>');
+        markersRef.current.push(destMarker);
         bounds.push([destinationLocation.lat, destinationLocation.lng]);
       }
 
@@ -265,32 +291,42 @@ export default function WebMap({
       } else if (bounds.length === 1) {
         mapInstanceRef.current.setView(bounds[0], 15);
       }
+
     } catch (error) {
-      console.error('更新地圖標記錯誤:', error);
+      console.error('Error updating map markers:', error);
     }
   };
 
   const retryMapLoad = () => {
-    setMapError(null);
+    setRetryCount(prev => prev + 1);
+    setMapError(false);
     setMapLoaded(false);
-    setIsLoading(true);
     loadLeafletAndInitializeMap();
   };
 
   if (Platform.OS !== 'web') {
-    return null;
+    return (
+      <View style={styles.webNotSupported}>
+        <IconSymbol name="exclamationmark.triangle" size={48} color={colors.warning} />
+        <Text style={styles.notSupportedTitle}>Web 平台限制</Text>
+        <Text style={styles.notSupportedText}>
+          互動式地圖功能在 Web 平台上有限制。{'\n'}
+          請在 iOS 或 Android 裝置上使用完整功能。
+        </Text>
+      </View>
+    );
   }
 
   if (mapError) {
     return (
-      <View style={styles.errorContainer}>
-        <IconSymbol name="exclamationmark.triangle" size={48} color="#F44336" />
-        <Text style={styles.errorTitle}>地圖載入失敗</Text>
-        <Text style={styles.errorText}>{mapError}</Text>
-        <Button
-          onPress={retryMapLoad}
-          style={styles.retryButton}
-        >
+      <View style={styles.webNotSupported}>
+        <IconSymbol name="wifi.slash" size={48} color={colors.error} />
+        <Text style={styles.notSupportedTitle}>地圖載入失敗</Text>
+        <Text style={styles.notSupportedText}>
+          無法載入地圖服務，請檢查網路連線。{'\n'}
+          {retryCount > 0 && `已重試 ${retryCount} 次`}
+        </Text>
+        <Button onPress={retryMapLoad}>
           重新載入
         </Button>
       </View>
@@ -304,152 +340,39 @@ export default function WebMap({
         style={{
           width: '100%',
           height: '100%',
-          borderRadius: 8,
-          position: 'relative',
+          borderRadius: 0,
         }}
       />
       
-      {isLoading && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContent}>
-            <Text style={styles.loadingText}>載入 Ttw-Taxi 地圖中...</Text>
-            <View style={styles.loadingDots}>
-              <View style={[styles.dot, styles.dot1]} />
-              <View style={[styles.dot, styles.dot2]} />
-              <View style={[styles.dot, styles.dot3]} />
-            </View>
-          </View>
+      {!mapLoaded && (
+        <View style={styles.loadingContainer}>
+          <IconSymbol name="arrow.clockwise" size={24} color={colors.primary} />
+          <Text style={styles.loadingText}>載入地圖中...</Text>
         </View>
       )}
-      
-      <View style={styles.statusOverlay}>
-        <View style={[styles.statusIndicator, { 
-          backgroundColor: isOnline ? '#4CAF50' : '#F44336' 
-        }]}>
-          <Text style={styles.statusText}>
-            {isOnline ? '線上' : '離線'}
-          </Text>
-        </View>
-      </View>
 
-      {mapLoaded && (
-        <View style={styles.mapInfo}>
-          <Text style={styles.mapInfoText}>
-            🗺️ Ttw-Taxi 已啟用
-          </Text>
+      {mapLoaded && (pickupLocation || destinationLocation) && (
+        <View style={styles.mapLegend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, { backgroundColor: isOnline ? colors.success : colors.error }]} />
+            <Text style={styles.legendText}>您的位置</Text>
+          </View>
+          {pickupLocation && (
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: colors.primary }]} />
+              <Text style={styles.legendText}>上車點</Text>
+            </View>
+          )}
+          {destinationLocation && (
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: colors.warning }]} />
+              <Text style={styles.legendText}>目的地</Text>
+            </View>
+          )}
         </View>
       )}
     </View>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    position: 'relative',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 20,
-  },
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginTop: 12,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  loadingContent: {
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666666',
-    fontWeight: '500',
-    marginBottom: 16,
-  },
-  loadingDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2196F3',
-    marginHorizontal: 2,
-  },
-  dot1: {
-    opacity: 0.4,
-  },
-  dot2: {
-    opacity: 0.7,
-  },
-  dot3: {
-    opacity: 1,
-  },
-  statusOverlay: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    zIndex: 1000,
-  },
-  statusIndicator: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  statusText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  mapInfo: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 1000,
-  },
-  mapInfoText: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontWeight: '500',
-  },
-});
+export default WebMap;

@@ -1,7 +1,7 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, Profile, Driver } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 interface AuthContextType {
   session: Session | null;
@@ -13,9 +13,19 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<{ error: any }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
+  updateDriver: (updates: Partial<Driver>) => Promise<{ error: any }>;
+  refreshUserData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -25,9 +35,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
+    // 獲取初始 session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session:', session);
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -37,31 +46,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event, session);
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          await loadUserProfile(session.user.id);
-        } else {
-          setProfile(null);
-          setDriver(null);
-          setLoading(false);
-        }
+    // 監聽認證狀態變化
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email);
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        await loadUserProfile(session.user.id);
+      } else {
+        setProfile(null);
+        setDriver(null);
+        setLoading(false);
       }
-    );
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const loadUserProfile = async (userId: string) => {
     try {
-      console.log('Loading profile for user:', userId);
+      setLoading(true);
       
-      // Try to load profile first
+      // 載入用戶資料
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -71,23 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profileError && profileError.code !== 'PGRST116') {
         console.error('Error loading profile:', profileError);
       } else if (profileData) {
-        console.log('Profile loaded:', profileData);
         setProfile(profileData);
         
-        // If user is a driver, also load driver data
+        // 如果是司機，載入司機資料
         if (profileData.user_type === 'driver') {
-          const { data: driverData, error: driverError } = await supabase
-            .from('drivers')
-            .select('*')
-            .eq('auth_user_id', userId)
-            .single();
-
-          if (driverError && driverError.code !== 'PGRST116') {
-            console.error('Error loading driver data:', driverError);
-          } else if (driverData) {
-            console.log('Driver data loaded:', driverData);
-            setDriver(driverData);
-          }
+          await loadDriverProfile(userId, profileData.line_user_id);
         }
       }
     } catch (error) {
@@ -97,160 +94,180 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loadDriverProfile = async (authUserId: string, lineUserId?: string) => {
+    try {
+      let query = supabase.from('drivers').select('*');
+      
+      // 優先使用 auth_user_id 查詢，如果沒有則使用 line_user_id
+      if (authUserId) {
+        query = query.eq('auth_user_id', authUserId);
+      } else if (lineUserId) {
+        query = query.eq('line_user_id', lineUserId);
+      } else {
+        return;
+      }
+
+      const { data: driverData, error: driverError } = await query.single();
+
+      if (driverError && driverError.code !== 'PGRST116') {
+        console.error('Error loading driver profile:', driverError);
+      } else if (driverData) {
+        setDriver(driverData);
+      }
+    } catch (error) {
+      console.error('Error in loadDriverProfile:', error);
+    }
+  };
+
   const signUp = async (email: string, password: string, userData: Partial<Profile>) => {
     try {
-      setLoading(true);
-      console.log('Signing up user:', email);
-      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: 'https://natively.dev/email-confirmed',
-          data: {
-            display_name: userData.display_name,
-            user_type: userData.user_type || 'passenger',
-          }
+          emailRedirectTo: 'https://natively.dev/email-confirmed'
         }
       });
 
       if (error) {
-        console.error('Sign up error:', error);
         return { error };
       }
 
-      console.log('Sign up successful:', data);
-
-      // If user is created, create profile
-      if (data.user && !error) {
-        const profileData: Partial<Profile> = {
-          auth_user_id: data.user.id,
-          email: email,
-          display_name: userData.display_name,
-          user_type: userData.user_type || 'passenger',
-          phone: userData.phone,
-          status: 'active',
-          notifications_enabled: true,
-        };
-
+      // 如果註冊成功且有用戶 ID，創建 profile
+      if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert([profileData]);
+          .insert([
+            {
+              auth_user_id: data.user.id,
+              email: email,
+              user_type: userData.user_type || 'driver',
+              display_name: userData.display_name,
+              phone: userData.phone,
+              ...userData,
+            },
+          ]);
 
         if (profileError) {
           console.error('Error creating profile:', profileError);
-          return { error: profileError };
         }
 
-        // If user type is driver, also create driver record
+        // 如果是司機，創建司機資料
         if (userData.user_type === 'driver') {
-          const driverData: Partial<Driver> = {
-            auth_user_id: data.user.id,
-            line_user_id: data.user.id, // Use auth user id as fallback
-            display_name: userData.display_name,
-            phone: userData.phone,
-            status: 'offline',
-            rating: 5.0,
-            total_rides: 0,
-          };
-
           const { error: driverError } = await supabase
             .from('drivers')
-            .insert([driverData]);
+            .insert([
+              {
+                auth_user_id: data.user.id,
+                display_name: userData.display_name,
+                phone: userData.phone,
+                status: 'offline',
+              },
+            ]);
 
           if (driverError) {
-            console.error('Error creating driver record:', driverError);
-            return { error: driverError };
+            console.error('Error creating driver profile:', driverError);
           }
         }
       }
 
       return { error: null };
     } catch (error) {
-      console.error('Unexpected error in signUp:', error);
+      console.error('Error in signUp:', error);
       return { error };
-    } finally {
-      setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      setLoading(true);
-      console.log('Signing in user:', email);
-      
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-
-      if (error) {
-        console.error('Sign in error:', error);
-        return { error };
-      }
-
-      console.log('Sign in successful:', data);
-      return { error: null };
-    } catch (error) {
-      console.error('Unexpected error in signIn:', error);
       return { error };
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error('Error in signIn:', error);
+      return { error };
     }
   };
 
   const signOut = async () => {
     try {
-      setLoading(true);
-      console.log('Signing out user');
-      
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('Sign out error:', error);
-        return { error };
+      // 如果是司機，先設為離線狀態
+      if (driver?.id) {
+        await supabase
+          .from('drivers')
+          .update({ status: 'offline' })
+          .eq('id', driver.id);
       }
 
-      console.log('Sign out successful');
-      return { error: null };
-    } catch (error) {
-      console.error('Unexpected error in signOut:', error);
+      const { error } = await supabase.auth.signOut();
+      
+      if (!error) {
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setDriver(null);
+      }
+      
       return { error };
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error('Error in signOut:', error);
+      return { error };
     }
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {
     try {
-      if (!user || !profile) {
+      if (!user?.id) {
         return { error: new Error('No user logged in') };
       }
 
-      console.log('Updating profile:', updates);
-      
       const { error } = await supabase
         .from('profiles')
         .update(updates)
         .eq('auth_user_id', user.id);
 
-      if (error) {
-        console.error('Error updating profile:', error);
-        return { error };
+      if (!error) {
+        setProfile(prev => prev ? { ...prev, ...updates } : null);
       }
 
-      // Reload profile data
-      await loadUserProfile(user.id);
-      
-      console.log('Profile updated successfully');
-      return { error: null };
+      return { error };
     } catch (error) {
-      console.error('Unexpected error in updateProfile:', error);
+      console.error('Error in updateProfile:', error);
       return { error };
     }
   };
 
-  const value = {
+  const updateDriver = async (updates: Partial<Driver>) => {
+    try {
+      if (!driver?.id) {
+        return { error: new Error('No driver profile found') };
+      }
+
+      const { error } = await supabase
+        .from('drivers')
+        .update(updates)
+        .eq('id', driver.id);
+
+      if (!error) {
+        setDriver(prev => prev ? { ...prev, ...updates } : null);
+      }
+
+      return { error };
+    } catch (error) {
+      console.error('Error in updateDriver:', error);
+      return { error };
+    }
+  };
+
+  const refreshUserData = async () => {
+    if (user?.id) {
+      await loadUserProfile(user.id);
+    }
+  };
+
+  const value: AuthContextType = {
     session,
     user,
     profile,
@@ -260,6 +277,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     updateProfile,
+    updateDriver,
+    refreshUserData,
   };
 
   return (
@@ -267,12 +286,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 }
