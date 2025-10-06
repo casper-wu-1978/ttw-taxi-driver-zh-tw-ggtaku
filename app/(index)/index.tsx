@@ -73,8 +73,8 @@ export default function TaxiDriverApp() {
       };
       setCurrentCoords(coords);
       
-      // Update map center when location is obtained
-      if (webViewRef.current && isMapLoaded && !mapError) {
+      // Update map center when location is obtained (only for mobile platforms)
+      if (Platform.OS !== 'web' && webViewRef.current && isMapLoaded && !mapError) {
         const updateMapScript = `
           try {
             if (window.map) {
@@ -112,8 +112,8 @@ export default function TaxiDriverApp() {
       setActiveRide(null);
       setRideStatus('idle');
       
-      // Clear markers when going offline
-      if (webViewRef.current && isMapLoaded && !mapError) {
+      // Clear markers when going offline (only for mobile platforms)
+      if (Platform.OS !== 'web' && webViewRef.current && isMapLoaded && !mapError) {
         const clearMarkersScript = `
           try {
             if (window.clearRideMarkers) {
@@ -135,8 +135,8 @@ export default function TaxiDriverApp() {
       setIncomingRequest(null);
       setRideStatus('heading_to_pickup');
       
-      // Add ride markers to map
-      if (webViewRef.current && isMapLoaded && !mapError) {
+      // Add ride markers to map (only for mobile platforms)
+      if (Platform.OS !== 'web' && webViewRef.current && isMapLoaded && !mapError) {
         // Mock coordinates for demo - in real app, you'd geocode the addresses
         const pickupLat = 25.0340; // Mock pickup coordinates
         const pickupLng = 121.5645;
@@ -163,8 +163,8 @@ export default function TaxiDriverApp() {
   const rejectRideRequest = () => {
     setIncomingRequest(null);
     
-    // Clear any potential markers from map
-    if (webViewRef.current && isMapLoaded && !mapError) {
+    // Clear any potential markers from map (only for mobile platforms)
+    if (Platform.OS !== 'web' && webViewRef.current && isMapLoaded && !mapError) {
       const clearMarkersScript = `
         try {
           if (window.clearRideMarkers) {
@@ -189,8 +189,8 @@ export default function TaxiDriverApp() {
       setRideStatus('completed');
       Alert.alert("行程完成", "感謝您的服務！");
       
-      // Clear ride markers from map
-      if (webViewRef.current && isMapLoaded && !mapError) {
+      // Clear ride markers from map (only for mobile platforms)
+      if (Platform.OS !== 'web' && webViewRef.current && isMapLoaded && !mapError) {
         const clearMarkersScript = `
           try {
             if (window.clearRideMarkers) {
@@ -365,32 +365,70 @@ export default function TaxiDriverApp() {
     );
   };
 
-  const renderMapView = () => {
-    // 檢查平台支援性
-    if (Platform.OS === 'web') {
-      return (
-        <View style={[styles.mapView, styles.mapErrorContainer]}>
-          <View style={styles.mapErrorContent}>
-            <IconSymbol name="exclamationmark.triangle" size={48} color="#FF9500" />
-            <Text style={styles.mapErrorTitle}>地圖功能暫不支援</Text>
-            <Text style={styles.mapErrorText}>
-              Web 平台目前不支援 WebView 地圖功能。{'\n'}
-              請在 iOS 或 Android 裝置上使用完整功能。
-            </Text>
-            <View style={styles.mapPlaceholder}>
-              <Text style={styles.mapPlaceholderText}>📍 地圖區域</Text>
-              <Text style={styles.mapPlaceholderSubtext}>
-                {currentCoords ? 
-                  `目前位置: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}` : 
-                  '正在取得位置資訊...'
-                }
+  const renderWebMapAlternative = () => (
+    <View style={[styles.mapView, styles.webMapContainer]}>
+      <View style={styles.webMapContent}>
+        <View style={styles.webMapHeader}>
+          <IconSymbol name="map" size={32} color="#2196F3" />
+          <Text style={styles.webMapTitle}>地圖功能</Text>
+        </View>
+        
+        <View style={styles.platformNotice}>
+          <IconSymbol name="info.circle" size={20} color="#FF9500" />
+          <Text style={styles.platformNoticeText}>
+            Web 版本暫不支援互動式地圖
+          </Text>
+        </View>
+
+        <View style={styles.locationInfo}>
+          <View style={styles.locationRow}>
+            <IconSymbol name="location.fill" size={16} color="#4CAF50" />
+            <Text style={styles.locationLabel}>目前位置</Text>
+          </View>
+          <Text style={styles.locationValue}>{currentLocation}</Text>
+          
+          {currentCoords && (
+            <View style={styles.coordsContainer}>
+              <Text style={styles.coordsText}>
+                緯度: {currentCoords.lat.toFixed(6)}
+              </Text>
+              <Text style={styles.coordsText}>
+                經度: {currentCoords.lng.toFixed(6)}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {(activeRide || incomingRequest) && (
+          <View style={styles.rideLocationInfo}>
+            <Text style={styles.rideLocationTitle}>行程資訊</Text>
+            
+            <View style={styles.rideLocationItem}>
+              <IconSymbol name="location" size={14} color="#4CAF50" />
+              <Text style={styles.rideLocationText}>
+                上車: {(activeRide || incomingRequest)?.pickupAddress}
+              </Text>
+            </View>
+            
+            <View style={styles.rideLocationItem}>
+              <IconSymbol name="flag" size={14} color="#F44336" />
+              <Text style={styles.rideLocationText}>
+                目的地: {(activeRide || incomingRequest)?.destinationAddress}
               </Text>
             </View>
           </View>
-        </View>
-      );
-    }
+        )}
 
+        <View style={styles.webMapFooter}>
+          <Text style={styles.webMapFooterText}>
+            💡 在 iOS 或 Android 裝置上可使用完整的互動式地圖功能
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderMobileMapView = () => {
     // 如果有地圖錯誤，顯示錯誤訊息
     if (mapError) {
       return (
@@ -443,6 +481,7 @@ export default function TaxiDriverApp() {
             border-radius: 8px;
             text-align: center;
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            z-index: 1000;
           }
         </style>
       </head>
@@ -621,6 +660,15 @@ export default function TaxiDriverApp() {
     );
   };
 
+  const renderMapView = () => {
+    // 根據平台選擇不同的地圖實現
+    if (Platform.OS === 'web') {
+      return renderWebMapAlternative();
+    } else {
+      return renderMobileMapView();
+    }
+  };
+
   return (
     <>
       <Stack.Screen
@@ -654,6 +702,121 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#BDBDBD',
   },
+  // Web 地圖替代方案樣式
+  webMapContainer: {
+    backgroundColor: '#F8F9FA',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+  },
+  webMapContent: {
+    flex: 1,
+    padding: 20,
+  },
+  webMapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  webMapTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2196F3',
+    marginLeft: 8,
+  },
+  platformNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3CD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9500',
+  },
+  platformNoticeText: {
+    fontSize: 14,
+    color: '#856404',
+    marginLeft: 8,
+    flex: 1,
+  },
+  locationInfo: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  locationLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginLeft: 6,
+  },
+  locationValue: {
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  coordsContainer: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 4,
+  },
+  coordsText: {
+    fontSize: 12,
+    color: '#666666',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  rideLocationInfo: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  rideLocationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1976D2',
+    marginBottom: 12,
+  },
+  rideLocationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  rideLocationText: {
+    fontSize: 14,
+    color: '#333333',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 18,
+  },
+  webMapFooter: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 'auto',
+  },
+  webMapFooterText: {
+    fontSize: 12,
+    color: '#2E7D32',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  // 錯誤處理樣式
   mapErrorContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -679,31 +842,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 16,
   },
-  mapPlaceholder: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#2196F3',
-    borderStyle: 'dashed',
-  },
-  mapPlaceholderText: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  mapPlaceholderSubtext: {
-    fontSize: 12,
-    color: '#666666',
-    textAlign: 'center',
-  },
   retryButton: {
     backgroundColor: '#2196F3',
     borderRadius: 8,
     paddingHorizontal: 20,
     paddingVertical: 10,
   },
+  // 其他樣式保持不變
   contentContainer: {
     flex: 1,
     padding: 16,
