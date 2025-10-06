@@ -1,67 +1,207 @@
 
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert } from "react-native";
+import { Button } from "@/components/button";
 import React, { useState } from "react";
 import { Stack } from "expo-router";
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
-import { Button } from "@/components/button";
 import { colors, commonStyles } from "@/styles/commonStyles";
+import { useAuth } from "@/contexts/AuthContext";
+import AuthGuard from "@/components/AuthGuard";
 
-export default function SettingsScreen() {
-  const [notifications, setNotifications] = useState(true);
-  const [autoAccept, setAutoAccept] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [vibrationEnabled, setVibrationEnabled] = useState(true);
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    padding: 20,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  content: {
+    flex: 1,
+  },
+  profileSection: {
+    padding: 20,
+    backgroundColor: colors.surface,
+    marginBottom: 12,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.surface,
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  profileType: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  section: {
+    backgroundColor: colors.surface,
+    marginBottom: 12,
+  },
+  sectionHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  settingItemLast: {
+    borderBottomWidth: 0,
+  },
+  settingIcon: {
+    marginRight: 12,
+  },
+  settingContent: {
+    flex: 1,
+  },
+  settingTitle: {
+    fontSize: 16,
+    color: colors.text,
+    marginBottom: 2,
+  },
+  settingSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  settingAction: {
+    marginLeft: 8,
+  },
+  logoutButton: {
+    margin: 20,
+    backgroundColor: colors.error,
+  },
+});
 
-  const driverInfo = {
-    name: "張志明",
-    licenseNumber: "TXI-2024-001",
-    vehicleModel: "Toyota Camry",
-    plateNumber: "ABC-1234",
-    rating: 4.8,
-    totalTrips: 1256,
-    joinDate: "2023年3月"
-  };
+function SettingsScreen() {
+  const { user, profile, driver, signOut, updateProfile } = useAuth();
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    profile?.notifications_enabled ?? true
+  );
+  const [locationSharing, setLocationSharing] = useState(true);
 
   const handleLogout = () => {
     Alert.alert(
-      "確認登出",
-      "您確定要登出嗎？",
+      '登出確認',
+      '確定要登出嗎？',
       [
-        { text: "取消", style: "cancel" },
-        { text: "登出", style: "destructive", onPress: () => console.log("Logged out") }
+        {
+          text: '取消',
+          style: 'cancel',
+        },
+        {
+          text: '登出',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await signOut();
+            if (error) {
+              Alert.alert('錯誤', '登出失敗，請稍後再試');
+            }
+          },
+        },
       ]
     );
   };
 
-  const renderDriverProfile = () => (
-    <View style={styles.profileCard}>
-      <View style={styles.profileHeader}>
-        <View style={styles.avatarContainer}>
-          <IconSymbol name="person.circle.fill" size={60} color={colors.primary} />
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.driverName}>{driverInfo.name}</Text>
-          <Text style={styles.licenseNumber}>執照號碼：{driverInfo.licenseNumber}</Text>
-          <View style={styles.ratingContainer}>
-            <IconSymbol name="star.fill" size={16} color="#FFD700" />
-            <Text style={styles.ratingText}>{driverInfo.rating}</Text>
-            <Text style={styles.tripCount}>({driverInfo.totalTrips} 趟)</Text>
+  const handleNotificationToggle = async (value: boolean) => {
+    setNotificationsEnabled(value);
+    if (updateProfile) {
+      const { error } = await updateProfile({ notifications_enabled: value });
+      if (error) {
+        console.error('Error updating notifications setting:', error);
+        setNotificationsEnabled(!value); // Revert on error
+        Alert.alert('錯誤', '更新設定失敗');
+      }
+    }
+  };
+
+  const renderDriverProfile = () => {
+    const displayName = profile?.display_name || user?.email || '用戶';
+    const initials = displayName.charAt(0).toUpperCase();
+
+    return (
+      <View style={styles.profileSection}>
+        <View style={styles.profileHeader}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{displayName}</Text>
+            <Text style={styles.profileEmail}>{user?.email}</Text>
+            <Text style={styles.profileType}>
+              {profile?.user_type === 'driver' ? '司機' : '乘客'}
+            </Text>
           </View>
         </View>
+        
+        {profile?.user_type === 'driver' && driver && (
+          <View>
+            <Text style={styles.settingSubtitle}>
+              評分: {driver.rating?.toFixed(1) || '5.0'} ⭐ | 
+              總行程: {driver.total_rides || 0} | 
+              狀態: {driver.status === 'online' ? '線上' : '離線'}
+            </Text>
+          </View>
+        )}
       </View>
-      
-      <View style={styles.vehicleInfo}>
-        <Text style={styles.vehicleTitle}>車輛資訊</Text>
-        <Text style={styles.vehicleDetail}>{driverInfo.vehicleModel}</Text>
-        <Text style={styles.vehicleDetail}>車牌：{driverInfo.plateNumber}</Text>
-        <Text style={styles.joinDate}>加入時間：{driverInfo.joinDate}</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderSettingsSection = (title: string, children: React.ReactNode) => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
       {children}
     </View>
   );
@@ -70,292 +210,169 @@ export default function SettingsScreen() {
     icon: string,
     title: string,
     subtitle?: string,
-    rightComponent?: React.ReactNode,
-    onPress?: () => void
+    action?: React.ReactNode,
+    onPress?: () => void,
+    isLast?: boolean
   ) => (
-    <Pressable style={styles.settingItem} onPress={onPress}>
-      <View style={styles.settingLeft}>
-        <IconSymbol name={icon as any} size={20} color={colors.primary} />
-        <View style={styles.settingText}>
-          <Text style={styles.settingTitle}>{title}</Text>
-          {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
-        </View>
+    <Pressable
+      style={[styles.settingItem, isLast && styles.settingItemLast]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
+      <IconSymbol name={icon} size={20} color={colors.primary} style={styles.settingIcon} />
+      <View style={styles.settingContent}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
       </View>
-      {rightComponent && (
-        <View style={styles.settingRight}>
-          {rightComponent}
-        </View>
+      {action && <View style={styles.settingAction}>{action}</View>}
+      {onPress && !action && (
+        <IconSymbol name="chevron.right" size={16} color={colors.textSecondary} />
       )}
     </Pressable>
   );
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "設定",
-          headerStyle: { backgroundColor: colors.primary },
-          headerTintColor: '#FFFFFF',
-          headerTitleStyle: { fontWeight: 'bold' },
-        }}
-      />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+      
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>設定</Text>
+        <Text style={styles.headerSubtitle}>管理您的帳號和應用程式設定</Text>
+      </View>
+
+      <ScrollView style={styles.content}>
         {renderDriverProfile()}
 
-        {renderSettingsSection("通知設定", (
+        {renderSettingsSection(
+          '通知設定',
           <>
             {renderSettingItem(
-              "bell",
-              "推播通知",
-              "接收新訂單和系統通知",
+              'bell',
+              '推播通知',
+              '接收新訂單和重要訊息',
               <Switch
-                value={notifications}
-                onValueChange={setNotifications}
+                value={notificationsEnabled}
+                onValueChange={handleNotificationToggle}
                 trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
+                thumbColor={colors.surface}
+              />,
+              undefined,
+              false
             )}
             {renderSettingItem(
-              "speaker.wave.2",
-              "聲音提醒",
-              "新訂單聲音提醒",
+              'location',
+              '位置分享',
+              '允許乘客查看您的位置',
               <Switch
-                value={soundEnabled}
-                onValueChange={setSoundEnabled}
+                value={locationSharing}
+                onValueChange={setLocationSharing}
                 trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
-            )}
-            {renderSettingItem(
-              "iphone.radiowaves.left.and.right",
-              "震動提醒",
-              "新訂單震動提醒",
-              <Switch
-                value={vibrationEnabled}
-                onValueChange={setVibrationEnabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
+                thumbColor={colors.surface}
+              />,
+              undefined,
+              true
             )}
           </>
-        ))}
+        )}
 
-        {renderSettingsSection("接單設定", (
+        {renderSettingsSection(
+          '帳號管理',
           <>
             {renderSettingItem(
-              "checkmark.circle",
-              "自動接單",
-              "符合條件的訂單自動接受",
-              <Switch
-                value={autoAccept}
-                onValueChange={setAutoAccept}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#FFFFFF"
-              />
+              'person.circle',
+              '個人資料',
+              '編輯您的個人資訊',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              false
             )}
             {renderSettingItem(
-              "slider.horizontal.3",
-              "接單範圍",
-              "目前設定：3公里",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("設定接單範圍", "此功能開發中")
+              'key',
+              '更改密碼',
+              '更新您的登入密碼',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              false
             )}
             {renderSettingItem(
-              "clock",
-              "工作時間",
-              "設定偏好的工作時段",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("設定工作時間", "此功能開發中")
+              'creditcard',
+              '付款方式',
+              '管理您的付款資訊',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              true
             )}
           </>
-        ))}
+        )}
 
-        {renderSettingsSection("帳戶管理", (
+        {profile?.user_type === 'driver' && renderSettingsSection(
+          '司機設定',
           <>
             {renderSettingItem(
-              "person.crop.circle",
-              "個人資料",
-              "編輯個人和車輛資訊",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("個人資料", "此功能開發中")
+              'car',
+              '車輛資訊',
+              '管理您的車輛資料',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              false
             )}
             {renderSettingItem(
-              "creditcard",
-              "收款設定",
-              "管理收款方式",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("收款設定", "此功能開發中")
-            )}
-            {renderSettingItem(
-              "doc.text",
-              "證件管理",
-              "上傳和更新證件",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("證件管理", "此功能開發中")
+              'doc.text',
+              '證件管理',
+              '上傳和管理駕照等證件',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              true
             )}
           </>
-        ))}
+        )}
 
-        {renderSettingsSection("其他", (
+        {renderSettingsSection(
+          '應用程式',
           <>
             {renderSettingItem(
-              "questionmark.circle",
-              "幫助中心",
-              "常見問題和客服聯絡",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("幫助中心", "此功能開發中")
+              'questionmark.circle',
+              '幫助與支援',
+              '常見問題和客服聯絡',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              false
             )}
             {renderSettingItem(
-              "info.circle",
-              "關於我們",
-              "版本資訊和服務條款",
-              <IconSymbol name="chevron.right" size={16} color={colors.textLight} />,
-              () => Alert.alert("關於我們", "TTW-TAXI 司機端 v1.0.0")
+              'info.circle',
+              '關於應用程式',
+              '版本資訊和使用條款',
+              undefined,
+              () => Alert.alert('關於', 'TTW-TAXI v1.0.0\n司機端應用程式'),
+              false
+            )}
+            {renderSettingItem(
+              'star',
+              '評價應用程式',
+              '在應用程式商店給我們評分',
+              undefined,
+              () => Alert.alert('功能開發中', '此功能正在開發中'),
+              true
             )}
           </>
-        ))}
+        )}
 
-        <View style={styles.logoutContainer}>
-          <Button
-            onPress={handleLogout}
-            style={styles.logoutButton}
-            textStyle={styles.logoutButtonText}
-          >
-            登出
-          </Button>
-        </View>
+        <Button
+          onPress={handleLogout}
+          style={styles.logoutButton}
+          variant="primary"
+        >
+          登出
+        </Button>
       </ScrollView>
-    </>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  profileCard: {
-    backgroundColor: colors.card,
-    margin: 16,
-    borderRadius: 12,
-    padding: 16,
-    ...commonStyles.shadow,
-  },
-  profileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  avatarContainer: {
-    marginRight: 16,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  licenseNumber: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginLeft: 4,
-    marginRight: 8,
-  },
-  tripCount: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  vehicleInfo: {
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  vehicleTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 8,
-  },
-  vehicleDetail: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  joinDate: {
-    fontSize: 12,
-    color: colors.textLight,
-    marginTop: 8,
-  },
-  settingsSection: {
-    backgroundColor: colors.card,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...commonStyles.shadow,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    padding: 16,
-    paddingBottom: 8,
-    backgroundColor: colors.background,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  settingSubtitle: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  settingRight: {
-    marginLeft: 16,
-  },
-  logoutContainer: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  logoutButton: {
-    backgroundColor: colors.error,
-    borderRadius: 8,
-    paddingVertical: 12,
-  },
-  logoutButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-});
+export default function ProtectedSettingsScreen() {
+  return (
+    <AuthGuard>
+      <SettingsScreen />
+    </AuthGuard>
+  );
+}
