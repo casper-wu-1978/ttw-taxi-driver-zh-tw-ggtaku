@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Stack } from "expo-router";
-import { View, Text, StyleSheet, Pressable, Alert, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert, Dimensions, Platform } from "react-native";
 import { WebView } from 'react-native-webview';
 import { IconSymbol } from "@/components/IconSymbol";
 import { Button } from "@/components/button";
@@ -28,6 +28,8 @@ export default function TaxiDriverApp() {
   const [incomingRequest, setIncomingRequest] = useState<RideRequest | null>(null);
   const [rideStatus, setRideStatus] = useState<'idle' | 'heading_to_pickup' | 'passenger_onboard' | 'completed'>('idle');
   const [currentCoords, setCurrentCoords] = useState<{lat: number, lng: number} | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
   // Mock ride request for demo
@@ -72,17 +74,21 @@ export default function TaxiDriverApp() {
       setCurrentCoords(coords);
       
       // Update map center when location is obtained
-      if (webViewRef.current) {
+      if (webViewRef.current && isMapLoaded && !mapError) {
         const updateMapScript = `
-          if (window.map) {
-            window.map.setCenter([${coords.lng}, ${coords.lat}]);
-            if (window.driverMarker) {
-              window.driverMarker.setLngLat([${coords.lng}, ${coords.lat}]);
-            } else {
-              window.driverMarker = new mapboxgl.Marker({ color: '#2196F3' })
-                .setLngLat([${coords.lng}, ${coords.lat}])
-                .addTo(window.map);
+          try {
+            if (window.map) {
+              window.map.setCenter([${coords.lng}, ${coords.lat}]);
+              if (window.driverMarker) {
+                window.driverMarker.setLngLat([${coords.lng}, ${coords.lat}]);
+              } else {
+                window.driverMarker = new mapboxgl.Marker({ color: '#2196F3' })
+                  .setLngLat([${coords.lng}, ${coords.lat}])
+                  .addTo(window.map);
+              }
             }
+          } catch (error) {
+            console.log('地圖更新錯誤:', error);
           }
           true;
         `;
@@ -107,10 +113,14 @@ export default function TaxiDriverApp() {
       setRideStatus('idle');
       
       // Clear markers when going offline
-      if (webViewRef.current) {
+      if (webViewRef.current && isMapLoaded && !mapError) {
         const clearMarkersScript = `
-          if (window.clearRideMarkers) {
-            window.clearRideMarkers();
+          try {
+            if (window.clearRideMarkers) {
+              window.clearRideMarkers();
+            }
+          } catch (error) {
+            console.log('清除標記錯誤:', error);
           }
           true;
         `;
@@ -126,7 +136,7 @@ export default function TaxiDriverApp() {
       setRideStatus('heading_to_pickup');
       
       // Add ride markers to map
-      if (webViewRef.current) {
+      if (webViewRef.current && isMapLoaded && !mapError) {
         // Mock coordinates for demo - in real app, you'd geocode the addresses
         const pickupLat = 25.0340; // Mock pickup coordinates
         const pickupLng = 121.5645;
@@ -134,8 +144,12 @@ export default function TaxiDriverApp() {
         const destLng = 121.5720;
         
         const addMarkersScript = `
-          if (window.addRideMarkers) {
-            window.addRideMarkers(${pickupLat}, ${pickupLng}, ${destLat}, ${destLng});
+          try {
+            if (window.addRideMarkers) {
+              window.addRideMarkers(${pickupLat}, ${pickupLng}, ${destLat}, ${destLng});
+            }
+          } catch (error) {
+            console.log('新增標記錯誤:', error);
           }
           true;
         `;
@@ -150,10 +164,14 @@ export default function TaxiDriverApp() {
     setIncomingRequest(null);
     
     // Clear any potential markers from map
-    if (webViewRef.current) {
+    if (webViewRef.current && isMapLoaded && !mapError) {
       const clearMarkersScript = `
-        if (window.clearRideMarkers) {
-          window.clearRideMarkers();
+        try {
+          if (window.clearRideMarkers) {
+            window.clearRideMarkers();
+          }
+        } catch (error) {
+          console.log('清除標記錯誤:', error);
         }
         true;
       `;
@@ -172,10 +190,14 @@ export default function TaxiDriverApp() {
       Alert.alert("行程完成", "感謝您的服務！");
       
       // Clear ride markers from map
-      if (webViewRef.current) {
+      if (webViewRef.current && isMapLoaded && !mapError) {
         const clearMarkersScript = `
-          if (window.clearRideMarkers) {
-            window.clearRideMarkers();
+          try {
+            if (window.clearRideMarkers) {
+              window.clearRideMarkers();
+            }
+          } catch (error) {
+            console.log('清除標記錯誤:', error);
           }
           true;
         `;
@@ -344,6 +366,53 @@ export default function TaxiDriverApp() {
   };
 
   const renderMapView = () => {
+    // 檢查平台支援性
+    if (Platform.OS === 'web') {
+      return (
+        <View style={[styles.mapView, styles.mapErrorContainer]}>
+          <View style={styles.mapErrorContent}>
+            <IconSymbol name="exclamationmark.triangle" size={48} color="#FF9500" />
+            <Text style={styles.mapErrorTitle}>地圖功能暫不支援</Text>
+            <Text style={styles.mapErrorText}>
+              Web 平台目前不支援 WebView 地圖功能。{'\n'}
+              請在 iOS 或 Android 裝置上使用完整功能。
+            </Text>
+            <View style={styles.mapPlaceholder}>
+              <Text style={styles.mapPlaceholderText}>📍 地圖區域</Text>
+              <Text style={styles.mapPlaceholderSubtext}>
+                {currentCoords ? 
+                  `目前位置: ${currentCoords.lat.toFixed(4)}, ${currentCoords.lng.toFixed(4)}` : 
+                  '正在取得位置資訊...'
+                }
+              </Text>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    // 如果有地圖錯誤，顯示錯誤訊息
+    if (mapError) {
+      return (
+        <View style={[styles.mapView, styles.mapErrorContainer]}>
+          <View style={styles.mapErrorContent}>
+            <IconSymbol name="exclamationmark.triangle" size={48} color="#F44336" />
+            <Text style={styles.mapErrorTitle}>地圖載入失敗</Text>
+            <Text style={styles.mapErrorText}>{mapError}</Text>
+            <Button
+              onPress={() => {
+                setMapError(null);
+                setIsMapLoaded(false);
+              }}
+              style={styles.retryButton}
+            >
+              重新載入
+            </Button>
+          </View>
+        </View>
+      );
+    }
+
     const mapboxAccessToken = 'pk.eyJ1IjoiY2FzcGVyNjciLCJhIjoiY205Y2FoMDIyMHNpYjJ5b2V5dGE2MmJnbyJ9.yzckI6SXN3-Fl_5-llEYzQ';
     const defaultLat = currentCoords?.lat || 25.0330; // Taipei default
     const defaultLng = currentCoords?.lng || 121.5654;
@@ -364,75 +433,132 @@ export default function TaxiDriverApp() {
           .mapboxgl-ctrl-bottom-right {
             display: none;
           }
+          .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+          }
         </style>
       </head>
       <body>
         <div id="map"></div>
+        <div id="loading" class="loading">
+          <div>載入地圖中...</div>
+        </div>
         <script>
-          mapboxgl.accessToken = '${mapboxAccessToken}';
-          
-          window.map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v12',
-            center: [${defaultLng}, ${defaultLat}],
-            zoom: 15,
-            attributionControl: false
-          });
-
-          // Add navigation control
-          window.map.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-          // Add driver marker
-          window.driverMarker = new mapboxgl.Marker({ 
-            color: '#2196F3',
-            scale: 1.2
-          })
-          .setLngLat([${defaultLng}, ${defaultLat}])
-          .addTo(window.map);
-
-          // Add pickup and destination markers when there's an active ride
-          window.addRideMarkers = function(pickupLat, pickupLng, destLat, destLng) {
-            // Remove existing markers
-            if (window.pickupMarker) window.pickupMarker.remove();
-            if (window.destMarker) window.destMarker.remove();
+          try {
+            mapboxgl.accessToken = '${mapboxAccessToken}';
             
-            // Add pickup marker
-            window.pickupMarker = new mapboxgl.Marker({ color: '#4CAF50' })
-              .setLngLat([pickupLng, pickupLat])
-              .addTo(window.map);
-            
-            // Add destination marker
-            window.destMarker = new mapboxgl.Marker({ color: '#F44336' })
-              .setLngLat([destLng, destLat])
-              .addTo(window.map);
-            
-            // Fit bounds to show all markers
-            const bounds = new mapboxgl.LngLatBounds();
-            bounds.extend([${defaultLng}, ${defaultLat}]); // driver
-            bounds.extend([pickupLng, pickupLat]); // pickup
-            bounds.extend([destLng, destLat]); // destination
-            
-            window.map.fitBounds(bounds, { padding: 50 });
-          };
+            window.map = new mapboxgl.Map({
+              container: 'map',
+              style: 'mapbox://styles/mapbox/streets-v12',
+              center: [${defaultLng}, ${defaultLat}],
+              zoom: 15,
+              attributionControl: false
+            });
 
-          window.clearRideMarkers = function() {
-            if (window.pickupMarker) {
-              window.pickupMarker.remove();
-              window.pickupMarker = null;
+            // 地圖載入完成事件
+            window.map.on('load', function() {
+              document.getElementById('loading').style.display = 'none';
+              
+              // 通知 React Native 地圖已載入
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'mapLoaded',
+                  success: true
+                }));
+              }
+            });
+
+            // 地圖載入錯誤事件
+            window.map.on('error', function(e) {
+              console.error('地圖載入錯誤:', e);
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'mapError',
+                  error: '地圖載入失敗: ' + (e.error ? e.error.message : '未知錯誤')
+                }));
+              }
+            });
+
+            // Add navigation control
+            window.map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+            // Add driver marker
+            window.driverMarker = new mapboxgl.Marker({ 
+              color: '#2196F3',
+              scale: 1.2
+            })
+            .setLngLat([${defaultLng}, ${defaultLat}])
+            .addTo(window.map);
+
+            // Add pickup and destination markers when there's an active ride
+            window.addRideMarkers = function(pickupLat, pickupLng, destLat, destLng) {
+              try {
+                // Remove existing markers
+                if (window.pickupMarker) window.pickupMarker.remove();
+                if (window.destMarker) window.destMarker.remove();
+                
+                // Add pickup marker
+                window.pickupMarker = new mapboxgl.Marker({ color: '#4CAF50' })
+                  .setLngLat([pickupLng, pickupLat])
+                  .addTo(window.map);
+                
+                // Add destination marker
+                window.destMarker = new mapboxgl.Marker({ color: '#F44336' })
+                  .setLngLat([destLng, destLat])
+                  .addTo(window.map);
+                
+                // Fit bounds to show all markers
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend([${defaultLng}, ${defaultLat}]); // driver
+                bounds.extend([pickupLng, pickupLat]); // pickup
+                bounds.extend([destLng, destLat]); // destination
+                
+                window.map.fitBounds(bounds, { padding: 50 });
+              } catch (error) {
+                console.error('新增標記錯誤:', error);
+              }
+            };
+
+            window.clearRideMarkers = function() {
+              try {
+                if (window.pickupMarker) {
+                  window.pickupMarker.remove();
+                  window.pickupMarker = null;
+                }
+                if (window.destMarker) {
+                  window.destMarker.remove();
+                  window.destMarker = null;
+                }
+                // Center back on driver
+                window.map.setCenter([${defaultLng}, ${defaultLat}]);
+                window.map.setZoom(15);
+              } catch (error) {
+                console.error('清除標記錯誤:', error);
+              }
+            };
+
+            // Handle map clicks (optional - for future features)
+            window.map.on('click', function(e) {
+              console.log('Map clicked at:', e.lngLat);
+            });
+
+          } catch (error) {
+            console.error('地圖初始化錯誤:', error);
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'mapError',
+                error: '地圖初始化失敗: ' + error.message
+              }));
             }
-            if (window.destMarker) {
-              window.destMarker.remove();
-              window.destMarker = null;
-            }
-            // Center back on driver
-            window.map.setCenter([${defaultLng}, ${defaultLat}]);
-            window.map.setZoom(15);
-          };
-
-          // Handle map clicks (optional - for future features)
-          window.map.on('click', function(e) {
-            console.log('Map clicked at:', e.lngLat);
-          });
+          }
         </script>
       </body>
       </html>
@@ -449,11 +575,48 @@ export default function TaxiDriverApp() {
         scalesPageToFit={false}
         scrollEnabled={false}
         onLoadEnd={() => {
-          console.log('Map loaded successfully');
+          console.log('WebView 載入完成');
         }}
-        onError={(error) => {
-          console.log('WebView error:', error);
+        onError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.log('WebView 錯誤:', nativeEvent);
+          setMapError(`WebView 載入失敗: ${nativeEvent.description || '未知錯誤'}`);
         }}
+        onHttpError={(syntheticEvent) => {
+          const { nativeEvent } = syntheticEvent;
+          console.log('WebView HTTP 錯誤:', nativeEvent);
+          setMapError(`HTTP 錯誤 ${nativeEvent.statusCode}: ${nativeEvent.description || '網路連線問題'}`);
+        }}
+        onMessage={(event) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            console.log('收到地圖訊息:', data);
+            
+            if (data.type === 'mapLoaded' && data.success) {
+              setIsMapLoaded(true);
+              setMapError(null);
+            } else if (data.type === 'mapError') {
+              setMapError(data.error);
+              setIsMapLoaded(false);
+            }
+          } catch (error) {
+            console.log('解析地圖訊息錯誤:', error);
+          }
+        }}
+        renderError={(errorName) => (
+          <View style={[styles.mapView, styles.mapErrorContainer]}>
+            <View style={styles.mapErrorContent}>
+              <IconSymbol name="exclamationmark.triangle" size={48} color="#F44336" />
+              <Text style={styles.mapErrorTitle}>WebView 錯誤</Text>
+              <Text style={styles.mapErrorText}>
+                {errorName === 'WebKitErrorDomain' ? 
+                  '網路連線問題，請檢查網路設定' : 
+                  `錯誤代碼: ${errorName}`
+                }
+              </Text>
+            </View>
+          </View>
+        )}
       />
     );
   };
@@ -490,6 +653,56 @@ const styles = StyleSheet.create({
     height: height * 0.4,
     borderBottomWidth: 1,
     borderBottomColor: '#BDBDBD',
+  },
+  mapErrorContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+  },
+  mapErrorContent: {
+    alignItems: 'center',
+    padding: 20,
+    maxWidth: '80%',
+  },
+  mapErrorTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  mapErrorText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  mapPlaceholder: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#2196F3',
+    borderStyle: 'dashed',
+  },
+  mapPlaceholderText: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  mapPlaceholderSubtext: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   contentContainer: {
     flex: 1,
