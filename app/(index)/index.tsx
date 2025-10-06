@@ -381,7 +381,7 @@ export default function TaxiDriverApp() {
       <View style={styles.webMapContainer}>
         <View style={styles.webMapHeader}>
           <IconSymbol name="map" size={24} color="#2196F3" />
-          <Text style={styles.webMapTitle}>互動式地圖</Text>
+          <Text style={styles.webMapTitle}>Ttw-Taxi</Text>
           <View style={styles.webBadge}>
             <Text style={styles.webBadgeText}>WEB</Text>
           </View>
@@ -429,7 +429,7 @@ export default function TaxiDriverApp() {
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Taxi Driver Map</title>
+        <title>Ttw-Taxi Driver Map</title>
         <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
         <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
         <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -457,7 +457,7 @@ export default function TaxiDriverApp() {
       <body>
         <div id="map"></div>
         <div id="loading" class="loading">
-          <div>載入地圖中...</div>
+          <div>載入 Ttw-Taxi 地圖中...</div>
         </div>
         <script>
           try {

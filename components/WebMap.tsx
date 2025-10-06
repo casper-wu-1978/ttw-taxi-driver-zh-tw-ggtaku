@@ -312,7 +312,7 @@ export default function WebMap({
       {isLoading && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContent}>
-            <Text style={styles.loadingText}>載入互動式地圖中...</Text>
+            <Text style={styles.loadingText}>載入 Ttw-Taxi 地圖中...</Text>
             <View style={styles.loadingDots}>
               <View style={[styles.dot, styles.dot1]} />
               <View style={[styles.dot, styles.dot2]} />
@@ -335,7 +335,7 @@ export default function WebMap({
       {mapLoaded && (
         <View style={styles.mapInfo}>
           <Text style={styles.mapInfoText}>
-            🗺️ 互動式地圖已啟用
+            🗺️ Ttw-Taxi 已啟用
           </Text>
         </View>
       )}
