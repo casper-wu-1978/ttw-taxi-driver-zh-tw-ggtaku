@@ -1,6 +1,6 @@
 
 import { useAuth } from "@/contexts/AuthContext";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
 import AuthGuard from "@/components/AuthGuard";
 import { Stack } from "expo-router";
@@ -227,28 +227,7 @@ function EarningsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadEarningsData();
-  }, [selectedPeriod]);
-
-  const loadEarningsData = async () => {
-    if (!driver?.id) return;
-    
-    setLoading(true);
-    try {
-      await Promise.all([
-        loadFinancialData(),
-        loadRideHistory(),
-        loadDriverStats(),
-      ]);
-    } catch (error) {
-      console.error('Error loading earnings data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadFinancialData = async () => {
+  const loadFinancialData = useCallback(async () => {
     if (!driver?.id) return;
 
     try {
@@ -307,9 +286,9 @@ function EarningsScreen() {
     } catch (error) {
       console.error('Error loading financial data:', error);
     }
-  };
+  }, [driver?.id]);
 
-  const loadRideHistory = async () => {
+  const loadRideHistory = useCallback(async () => {
     if (!driver?.id) return;
 
     try {
@@ -363,9 +342,9 @@ function EarningsScreen() {
     } catch (error) {
       console.error('Error loading ride history:', error);
     }
-  };
+  }, [driver?.id, selectedPeriod]);
 
-  const loadDriverStats = async () => {
+  const loadDriverStats = useCallback(async () => {
     if (!driver?.id) return;
 
     try {
@@ -401,7 +380,28 @@ function EarningsScreen() {
     } catch (error) {
       console.error('Error loading driver stats:', error);
     }
-  };
+  }, [driver?.id]);
+
+  const loadEarningsData = useCallback(async () => {
+    if (!driver?.id) return;
+    
+    setLoading(true);
+    try {
+      await Promise.all([
+        loadFinancialData(),
+        loadRideHistory(),
+        loadDriverStats(),
+      ]);
+    } catch (error) {
+      console.error('Error loading earnings data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [driver?.id, loadFinancialData, loadRideHistory, loadDriverStats]);
+
+  useEffect(() => {
+    loadEarningsData();
+  }, [loadEarningsData]);
 
   const onRefresh = async () => {
     setRefreshing(true);

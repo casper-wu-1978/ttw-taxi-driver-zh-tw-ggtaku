@@ -1,6 +1,6 @@
 
 import * as Location from 'expo-location';
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/button";
 import { View, Text, StyleSheet, Pressable, Alert, Dimensions, Platform, ScrollView } from "react-native";
 import { WebView } from 'react-native-webview';
@@ -266,50 +266,7 @@ function TaxiDriverApp() {
   });
   const [requestTimer, setRequestTimer] = useState(30);
 
-  useEffect(() => {
-    getCurrentLocation();
-    loadDriverStats();
-  }, []);
-
-  useEffect(() => {
-    // 模擬接收叫車請求
-    if (isOnline && !incomingRequest && !activeRide) {
-      const timer = setTimeout(() => {
-        setIncomingRequest({
-          id: '1',
-          passengerName: '王小明',
-          pickupAddress: '台北車站 1號出口',
-          destinationAddress: '松山機場 第一航廈',
-          distance: '12.5 公里',
-          estimatedFare: 'NT$ 350',
-          estimatedTime: '25 分鐘',
-          timestamp: new Date(),
-          pickupLatitude: 25.0478,
-          pickupLongitude: 121.5170,
-          destinationLatitude: 25.0697,
-          destinationLongitude: 121.5514,
-        });
-        setRequestTimer(30);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [isOnline, incomingRequest, activeRide]);
-
-  useEffect(() => {
-    // 請求倒計時
-    if (incomingRequest && requestTimer > 0) {
-      const timer = setTimeout(() => {
-        setRequestTimer(requestTimer - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (incomingRequest && requestTimer === 0) {
-      // 自動拒絕超時請求
-      setIncomingRequest(null);
-      Alert.alert('請求超時', '叫車請求已超時，自動拒絕');
-    }
-  }, [incomingRequest, requestTimer]);
-
-  const getCurrentLocation = async () => {
+  const getCurrentLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -332,7 +289,7 @@ function TaxiDriverApp() {
       console.error('Error getting location:', error);
       Alert.alert('錯誤', '無法獲取當前位置');
     }
-  };
+  }, [driver?.id]);
 
   const updateDriverLocation = async (coords: { lat: number; lng: number }) => {
     try {
@@ -353,7 +310,7 @@ function TaxiDriverApp() {
     }
   };
 
-  const loadDriverStats = async () => {
+  const loadDriverStats = useCallback(async () => {
     try {
       if (!driver?.id) return;
 
@@ -394,7 +351,50 @@ function TaxiDriverApp() {
     } catch (error) {
       console.error('Error loading driver stats:', error);
     }
-  };
+  }, [driver?.id]);
+
+  useEffect(() => {
+    getCurrentLocation();
+    loadDriverStats();
+  }, [getCurrentLocation, loadDriverStats]);
+
+  useEffect(() => {
+    // 模擬接收叫車請求
+    if (isOnline && !incomingRequest && !activeRide) {
+      const timer = setTimeout(() => {
+        setIncomingRequest({
+          id: '1',
+          passengerName: '王小明',
+          pickupAddress: '台北車站 1號出口',
+          destinationAddress: '松山機場 第一航廈',
+          distance: '12.5 公里',
+          estimatedFare: 'NT$ 350',
+          estimatedTime: '25 分鐘',
+          timestamp: new Date(),
+          pickupLatitude: 25.0478,
+          pickupLongitude: 121.5170,
+          destinationLatitude: 25.0697,
+          destinationLongitude: 121.5514,
+        });
+        setRequestTimer(30);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOnline, incomingRequest, activeRide]);
+
+  useEffect(() => {
+    // 請求倒計時
+    if (incomingRequest && requestTimer > 0) {
+      const timer = setTimeout(() => {
+        setRequestTimer(requestTimer - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (incomingRequest && requestTimer === 0) {
+      // 自動拒絕超時請求
+      setIncomingRequest(null);
+      Alert.alert('請求超時', '叫車請求已超時，自動拒絕');
+    }
+  }, [incomingRequest, requestTimer]);
 
   const toggleOnlineStatus = async () => {
     try {

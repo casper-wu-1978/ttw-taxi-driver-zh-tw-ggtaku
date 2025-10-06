@@ -2,7 +2,7 @@
 import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, TextInput } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/button";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import { Stack } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -236,12 +236,7 @@ function SettingsScreen() {
     totalEarnings: 0,
   });
 
-  useEffect(() => {
-    loadDriverData();
-    loadDriverStats();
-  }, [driver]);
-
-  const loadDriverData = () => {
+  const loadDriverData = useCallback(() => {
     if (driver) {
       setEditingProfile({
         display_name: driver.display_name || '',
@@ -257,9 +252,9 @@ function SettingsScreen() {
     if (profile) {
       setNotificationsEnabled(profile.notifications_enabled);
     }
-  };
+  }, [driver, profile]);
 
-  const loadDriverStats = async () => {
+  const loadDriverStats = useCallback(async () => {
     if (!driver?.id) return;
 
     try {
@@ -304,7 +299,12 @@ function SettingsScreen() {
     } catch (error) {
       console.error('Error loading driver stats:', error);
     }
-  };
+  }, [driver?.id]);
+
+  useEffect(() => {
+    loadDriverData();
+    loadDriverStats();
+  }, [loadDriverData, loadDriverStats]);
 
   const handleLogout = () => {
     Alert.alert(

@@ -1,7 +1,7 @@
 
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { IconSymbol } from './IconSymbol';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from './button';
 import { colors } from '@/styles/commonStyles';
 
@@ -112,19 +112,7 @@ const WebMap: React.FC<WebMapProps> = ({
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
 
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      loadLeafletAndInitializeMap();
-    }
-  }, []);
-
-  useEffect(() => {
-    if (mapLoaded && mapInstanceRef.current) {
-      updateMapMarkers();
-    }
-  }, [currentCoords, pickupLocation, destinationLocation, mapLoaded]);
-
-  const loadLeafletAndInitializeMap = async () => {
+  const loadLeafletAndInitializeMap = useCallback(async () => {
     try {
       setMapError(false);
       
@@ -153,9 +141,9 @@ const WebMap: React.FC<WebMapProps> = ({
       console.error('Error loading Leaflet:', error);
       setMapError(true);
     }
-  };
+  }, []);
 
-  const initializeMap = () => {
+  const initializeMap = useCallback(() => {
     try {
       if (!mapRef.current || !window.L) return;
 
@@ -190,9 +178,9 @@ const WebMap: React.FC<WebMapProps> = ({
       console.error('Error initializing map:', error);
       setMapError(true);
     }
-  };
+  }, [currentCoords]);
 
-  const updateMapMarkers = () => {
+  const updateMapMarkers = useCallback(() => {
     if (!mapInstanceRef.current || !window.L) return;
 
     try {
@@ -295,7 +283,19 @@ const WebMap: React.FC<WebMapProps> = ({
     } catch (error) {
       console.error('Error updating map markers:', error);
     }
-  };
+  }, [currentCoords, pickupLocation, destinationLocation, isOnline]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      loadLeafletAndInitializeMap();
+    }
+  }, [loadLeafletAndInitializeMap]);
+
+  useEffect(() => {
+    if (mapLoaded && mapInstanceRef.current) {
+      updateMapMarkers();
+    }
+  }, [mapLoaded, updateMapMarkers]);
 
   const retryMapLoad = () => {
     setRetryCount(prev => prev + 1);

@@ -1,7 +1,7 @@
 
 import { supabase, Profile, Driver } from '@/lib/supabase';
 import { Session, User } from '@supabase/supabase-js';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 interface AuthContextType {
   session: Session | null;
@@ -34,6 +34,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [driver, setDriver] = useState<Driver | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadDriverProfile = useCallback(async (authUserId: string, lineUserId?: string) => {
+    try {
+      let query = supabase.from('drivers').select('*');
+      
+      // 優先使用 auth_user_id 查詢，如果沒有則使用 line_user_id
+      if (authUserId) {
+        query = query.eq('auth_user_id', authUserId);
+      } else if (lineUserId) {
+        query = query.eq('line_user_id', lineUserId);
+      } else {
+        return;
+      }
+
+      const { data: driverData, error: driverError } = await query.single();
+
+      if (driverError && driverError.code !== 'PGRST116') {
+        console.error('Error loading driver profile:', driverError);
+      } else if (driverData) {
+        setDriver(driverData);
+      }
+    } catch (error) {
+      console.error('Error in loadDriverProfile:', error);
+    }
+  }, []);
+
+  const loadUserProfile = useCallback(async (userId: string) => {
+    try {
+      setLoading(true);
+      
+      // 載入用戶資料
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('auth_user_id', userId)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Error loading profile:', profileError);
+      } else if (profileData) {
+        setProfile(profileData);
+        
+        // 如果是司機，載入司機資料
+        if (profileData.user_type === 'driver') {
+          await loadDriverProfile(userId, profileData.line_user_id);
+        }
+      }
+    } catch (error) {
+      console.error('Error in loadUserProfile:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadDriverProfile]);
+
   useEffect(() => {
     // 獲取初始 session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,60 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  const loadUserProfile = async (userId: string) => {
-    try {
-      setLoading(true);
-      
-      // 載入用戶資料
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('auth_user_id', userId)
-        .single();
-
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Error loading profile:', profileError);
-      } else if (profileData) {
-        setProfile(profileData);
-        
-        // 如果是司機，載入司機資料
-        if (profileData.user_type === 'driver') {
-          await loadDriverProfile(userId, profileData.line_user_id);
-        }
-      }
-    } catch (error) {
-      console.error('Error in loadUserProfile:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDriverProfile = async (authUserId: string, lineUserId?: string) => {
-    try {
-      let query = supabase.from('drivers').select('*');
-      
-      // 優先使用 auth_user_id 查詢，如果沒有則使用 line_user_id
-      if (authUserId) {
-        query = query.eq('auth_user_id', authUserId);
-      } else if (lineUserId) {
-        query = query.eq('line_user_id', lineUserId);
-      } else {
-        return;
-      }
-
-      const { data: driverData, error: driverError } = await query.single();
-
-      if (driverError && driverError.code !== 'PGRST116') {
-        console.error('Error loading driver profile:', driverError);
-      } else if (driverData) {
-        setDriver(driverData);
-      }
-    } catch (error) {
-      console.error('Error in loadDriverProfile:', error);
-    }
-  };
+  }, [loadUserProfile]);
 
   const signUp = async (email: string, password: string, userData: Partial<Profile>) => {
     try {
