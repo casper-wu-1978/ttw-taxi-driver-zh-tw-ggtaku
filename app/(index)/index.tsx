@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Stack } from "expo-router";
 import { View, Text, StyleSheet, Pressable, Alert, Dimensions } from "react-native";
+import { WebView } from 'react-native-webview';
 import { IconSymbol } from "@/components/IconSymbol";
 import { Button } from "@/components/button";
 import { colors, commonStyles } from "@/styles/commonStyles";
@@ -26,6 +27,8 @@ export default function TaxiDriverApp() {
   const [activeRide, setActiveRide] = useState<RideRequest | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<RideRequest | null>(null);
   const [rideStatus, setRideStatus] = useState<'idle' | 'heading_to_pickup' | 'passenger_onboard' | 'completed'>('idle');
+  const [currentCoords, setCurrentCoords] = useState<{lat: number, lng: number} | null>(null);
+  const webViewRef = useRef<WebView>(null);
 
   // Mock ride request for demo
   const mockRideRequest: RideRequest = {
@@ -62,11 +65,37 @@ export default function TaxiDriverApp() {
       }
 
       let location = await Location.getCurrentPositionAsync({});
-      // Mock address for demo
+      const coords = {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude
+      };
+      setCurrentCoords(coords);
+      
+      // Update map center when location is obtained
+      if (webViewRef.current) {
+        const updateMapScript = `
+          if (window.map) {
+            window.map.setCenter([${coords.lng}, ${coords.lat}]);
+            if (window.driverMarker) {
+              window.driverMarker.setLngLat([${coords.lng}, ${coords.lat}]);
+            } else {
+              window.driverMarker = new mapboxgl.Marker({ color: '#2196F3' })
+                .setLngLat([${coords.lng}, ${coords.lat}])
+                .addTo(window.map);
+            }
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(updateMapScript);
+      }
+      
+      // Mock address for demo - in real app, you'd reverse geocode
       setCurrentLocation("台北市中正區重慶南路一段122號");
     } catch (error) {
       console.log('Location error:', error);
       setCurrentLocation("定位失敗");
+      // Default to Taipei coordinates
+      setCurrentCoords({ lat: 25.0330, lng: 121.5654 });
     }
   };
 
@@ -76,6 +105,17 @@ export default function TaxiDriverApp() {
       setIncomingRequest(null);
       setActiveRide(null);
       setRideStatus('idle');
+      
+      // Clear markers when going offline
+      if (webViewRef.current) {
+        const clearMarkersScript = `
+          if (window.clearRideMarkers) {
+            window.clearRideMarkers();
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(clearMarkersScript);
+      }
     }
   };
 
@@ -84,12 +124,42 @@ export default function TaxiDriverApp() {
       setActiveRide(incomingRequest);
       setIncomingRequest(null);
       setRideStatus('heading_to_pickup');
+      
+      // Add ride markers to map
+      if (webViewRef.current) {
+        // Mock coordinates for demo - in real app, you'd geocode the addresses
+        const pickupLat = 25.0340; // Mock pickup coordinates
+        const pickupLng = 121.5645;
+        const destLat = 25.0280; // Mock destination coordinates  
+        const destLng = 121.5720;
+        
+        const addMarkersScript = `
+          if (window.addRideMarkers) {
+            window.addRideMarkers(${pickupLat}, ${pickupLng}, ${destLat}, ${destLng});
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(addMarkersScript);
+      }
+      
       Alert.alert("接單成功", "正在前往接客地點");
     }
   };
 
   const rejectRideRequest = () => {
     setIncomingRequest(null);
+    
+    // Clear any potential markers from map
+    if (webViewRef.current) {
+      const clearMarkersScript = `
+        if (window.clearRideMarkers) {
+          window.clearRideMarkers();
+        }
+        true;
+      `;
+      webViewRef.current.injectJavaScript(clearMarkersScript);
+    }
+    
     Alert.alert("已拒絕", "訂單已拒絕");
   };
 
@@ -100,6 +170,18 @@ export default function TaxiDriverApp() {
     } else if (rideStatus === 'passenger_onboard') {
       setRideStatus('completed');
       Alert.alert("行程完成", "感謝您的服務！");
+      
+      // Clear ride markers from map
+      if (webViewRef.current) {
+        const clearMarkersScript = `
+          if (window.clearRideMarkers) {
+            window.clearRideMarkers();
+          }
+          true;
+        `;
+        webViewRef.current.injectJavaScript(clearMarkersScript);
+      }
+      
       setTimeout(() => {
         setActiveRide(null);
         setRideStatus('idle');
@@ -261,17 +343,120 @@ export default function TaxiDriverApp() {
     );
   };
 
-  const renderMapPlaceholder = () => (
-    <View style={styles.mapPlaceholder}>
-      <IconSymbol name="map" size={48} color="#9E9E9E" />
-      <Text style={styles.mapPlaceholderText}>
-        地圖功能在 Natively 中暫不支援
-      </Text>
-      <Text style={styles.mapPlaceholderSubtext}>
-        react-native-maps 目前無法在此環境中使用
-      </Text>
-    </View>
-  );
+  const renderMapView = () => {
+    const mapboxAccessToken = 'pk.eyJ1IjoiY2FzcGVyNjciLCJhIjoiY205Y2FoMDIyMHNpYjJ5b2V5dGE2MmJnbyJ9.yzckI6SXN3-Fl_5-llEYzQ';
+    const defaultLat = currentCoords?.lat || 25.0330; // Taipei default
+    const defaultLng = currentCoords?.lng || 121.5654;
+    
+    const mapHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Taxi Driver Map</title>
+        <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+        <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+        <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+        <style>
+          body { margin: 0; padding: 0; }
+          #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+          .mapboxgl-ctrl-bottom-left,
+          .mapboxgl-ctrl-bottom-right {
+            display: none;
+          }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          mapboxgl.accessToken = '${mapboxAccessToken}';
+          
+          window.map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: [${defaultLng}, ${defaultLat}],
+            zoom: 15,
+            attributionControl: false
+          });
+
+          // Add navigation control
+          window.map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+          // Add driver marker
+          window.driverMarker = new mapboxgl.Marker({ 
+            color: '#2196F3',
+            scale: 1.2
+          })
+          .setLngLat([${defaultLng}, ${defaultLat}])
+          .addTo(window.map);
+
+          // Add pickup and destination markers when there's an active ride
+          window.addRideMarkers = function(pickupLat, pickupLng, destLat, destLng) {
+            // Remove existing markers
+            if (window.pickupMarker) window.pickupMarker.remove();
+            if (window.destMarker) window.destMarker.remove();
+            
+            // Add pickup marker
+            window.pickupMarker = new mapboxgl.Marker({ color: '#4CAF50' })
+              .setLngLat([pickupLng, pickupLat])
+              .addTo(window.map);
+            
+            // Add destination marker
+            window.destMarker = new mapboxgl.Marker({ color: '#F44336' })
+              .setLngLat([destLng, destLat])
+              .addTo(window.map);
+            
+            // Fit bounds to show all markers
+            const bounds = new mapboxgl.LngLatBounds();
+            bounds.extend([${defaultLng}, ${defaultLat}]); // driver
+            bounds.extend([pickupLng, pickupLat]); // pickup
+            bounds.extend([destLng, destLat]); // destination
+            
+            window.map.fitBounds(bounds, { padding: 50 });
+          };
+
+          window.clearRideMarkers = function() {
+            if (window.pickupMarker) {
+              window.pickupMarker.remove();
+              window.pickupMarker = null;
+            }
+            if (window.destMarker) {
+              window.destMarker.remove();
+              window.destMarker = null;
+            }
+            // Center back on driver
+            window.map.setCenter([${defaultLng}, ${defaultLat}]);
+            window.map.setZoom(15);
+          };
+
+          // Handle map clicks (optional - for future features)
+          window.map.on('click', function(e) {
+            console.log('Map clicked at:', e.lngLat);
+          });
+        </script>
+      </body>
+      </html>
+    `;
+
+    return (
+      <WebView
+        ref={webViewRef}
+        source={{ html: mapHTML }}
+        style={styles.mapView}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        scalesPageToFit={false}
+        scrollEnabled={false}
+        onLoadEnd={() => {
+          console.log('Map loaded successfully');
+        }}
+        onError={(error) => {
+          console.log('WebView error:', error);
+        }}
+      />
+    );
+  };
 
   return (
     <>
@@ -284,7 +469,7 @@ export default function TaxiDriverApp() {
         }}
       />
       <View style={styles.container}>
-        {renderMapPlaceholder()}
+        {renderMapView()}
         
         <View style={styles.contentContainer}>
           {renderStatusCard()}
@@ -301,25 +486,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
-  mapPlaceholder: {
+  mapView: {
     height: height * 0.4,
-    backgroundColor: '#E0E0E0',
-    justifyContent: 'center',
-    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#BDBDBD',
-  },
-  mapPlaceholderText: {
-    fontSize: 16,
-    color: '#757575',
-    marginTop: 12,
-    fontWeight: '500',
-  },
-  mapPlaceholderSubtext: {
-    fontSize: 12,
-    color: '#9E9E9E',
-    marginTop: 4,
-    textAlign: 'center',
   },
   contentContainer: {
     flex: 1,
