@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (lineUserId) {
         query = query.eq('line_user_id', lineUserId);
       } else {
+        console.log('No user ID provided for driver profile loading');
         return;
       }
 
@@ -52,7 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (driverError && driverError.code !== 'PGRST116') {
         console.error('Error loading driver profile:', driverError);
       } else if (driverData) {
+        console.log('Driver profile loaded successfully:', {
+          name: driverData.display_name,
+          phone: driverData.phone,
+          vehicle_type: driverData.vehicle_type,
+          vehicle_plate: driverData.vehicle_plate,
+          vehicle_model: driverData.vehicle_model,
+          vehicle_color: driverData.vehicle_color
+        });
         setDriver(driverData);
+      } else {
+        console.log('No driver profile found for user');
       }
     } catch (error) {
       console.error('Error in loadDriverProfile:', error);

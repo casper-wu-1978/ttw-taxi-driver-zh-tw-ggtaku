@@ -1,5 +1,5 @@
 
-import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Switch, Alert, TextInput, RefreshControl } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/button";
 import React, { useState, useEffect, useCallback } from "react";
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
 });
 
 function SettingsScreen() {
-  const { user, profile, driver, signOut, updateProfile } = useAuth();
+  const { user, profile, driver, signOut, updateProfile, refreshUserData } = useAuth();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [autoAcceptEnabled, setAutoAcceptEnabled] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -235,8 +235,21 @@ function SettingsScreen() {
     completionRate: 100,
     totalEarnings: 0,
   });
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadDriverData = useCallback(() => {
+    console.log('Loading driver data:', {
+      hasDriver: !!driver,
+      driverName: driver?.display_name,
+      driverPhone: driver?.phone,
+      vehicleInfo: {
+        type: driver?.vehicle_type,
+        plate: driver?.vehicle_plate,
+        model: driver?.vehicle_model,
+        color: driver?.vehicle_color
+      }
+    });
+
     if (driver) {
       setEditingProfile({
         display_name: driver.display_name || '',
@@ -306,6 +319,18 @@ function SettingsScreen() {
     loadDriverStats();
   }, [loadDriverData, loadDriverStats]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshUserData();
+      await loadDriverStats();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshUserData, loadDriverStats]);
+
   const handleLogout = () => {
     Alert.alert(
       '登出確認',
@@ -361,6 +386,9 @@ function SettingsScreen() {
   const handleSaveProfile = async () => {
     try {
       if (driver?.id) {
+        // 更新現有司機資料
+        console.log('Updating driver profile with data:', editingProfile);
+        
         const { error } = await supabase
           .from('drivers')
           .update({
@@ -371,63 +399,144 @@ function SettingsScreen() {
             vehicle_model: editingProfile.vehicle_model,
             vehicle_color: editingProfile.vehicle_color,
             license_number: editingProfile.license_number,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', driver.id);
 
         if (error) {
+          console.error('Database update error:', error);
           Alert.alert('錯誤', '更新資料失敗，請稍後再試');
           return;
         }
 
+        // 重新載入用戶資料以反映更新
+        await refreshUserData();
+        
         Alert.alert('成功', '個人資料已更新');
         setShowEditModal(false);
+      } else if (user?.id) {
+        // 創建新的司機資料
+        console.log('Creating new driver profile with data:', editingProfile);
+        
+        const { error } = await supabase
+          .from('drivers')
+          .insert([{
+            auth_user_id: user.id,
+            line_user_id: `driver_${user.id}`,
+            display_name: editingProfile.display_name,
+            phone: editingProfile.phone,
+            vehicle_type: editingProfile.vehicle_type,
+            vehicle_plate: editingProfile.vehicle_plate,
+            vehicle_model: editingProfile.vehicle_model,
+            vehicle_color: editingProfile.vehicle_color,
+            license_number: editingProfile.license_number,
+            status: 'offline',
+            rating: 5.0,
+            total_rides: 0,
+          }]);
+
+        if (error) {
+          console.error('Database insert error:', error);
+          Alert.alert('錯誤', '創建司機資料失敗，請稍後再試');
+          return;
+        }
+
+        // 重新載入用戶資料以反映更新
+        await refreshUserData();
+        
+        Alert.alert('成功', '司機資料已創建');
+        setShowEditModal(false);
+      } else {
+        Alert.alert('錯誤', '找不到用戶資料');
       }
     } catch (error) {
-      console.error('Error updating profile:', error);
-      Alert.alert('錯誤', '更新資料失敗，請稍後再試');
+      console.error('Error saving profile:', error);
+      Alert.alert('錯誤', '儲存資料失敗，請稍後再試');
     }
   };
 
-  const renderDriverProfile = () => (
-    <View style={styles.profileSection}>
-      <View style={styles.profileHeader}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(driver?.display_name || profile?.display_name || '司機')[0]}
-          </Text>
+  const renderDriverProfile = () => {
+    if (!driver) {
+      return (
+        <View style={styles.profileSection}>
+          <View style={styles.profileHeader}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {(profile?.display_name || '司機')[0]}
+              </Text>
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>
+                {profile?.display_name || '未設定姓名'}
+              </Text>
+              <Text style={styles.profileDetails}>
+                司機資料尚未建立
+              </Text>
+              <Text style={styles.profileDetails}>
+                請點擊編輯按鈕完善個人資料
+              </Text>
+            </View>
+            <Pressable style={styles.editButton} onPress={handleEditProfile}>
+              <Text style={styles.editButtonText}>編輯</Text>
+            </Pressable>
+          </View>
         </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>
-            {driver?.display_name || profile?.display_name || '未設定姓名'}
-          </Text>
-          <Text style={styles.profileDetails}>
-            {driver?.vehicle_type || '計程車'} • {driver?.vehicle_plate || '未設定車牌'}
-          </Text>
-          <Text style={styles.profileDetails}>
-            評分: ⭐ {driverStats.rating.toFixed(1)} • 總行程: {driverStats.totalRides}
-          </Text>
-        </View>
-        <Pressable style={styles.editButton} onPress={handleEditProfile}>
-          <Text style={styles.editButtonText}>編輯</Text>
-        </Pressable>
-      </View>
+      );
+    }
 
-      <View style={styles.statsCard}>
-        <View style={styles.statsRow}>
-          <Text style={styles.statsLabel}>完成率</Text>
-          <Text style={styles.statsValue}>{driverStats.completionRate}%</Text>
+    return (
+      <View style={styles.profileSection}>
+        <View style={styles.profileHeader}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(driver?.display_name || profile?.display_name || '司機')[0]}
+            </Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>
+              {driver?.display_name || profile?.display_name || '未設定姓名'}
+            </Text>
+            <Text style={styles.profileDetails}>
+              電話: {driver?.phone || '未設定'}
+            </Text>
+            <Text style={styles.profileDetails}>
+              {driver?.vehicle_type || '計程車'} • {driver?.vehicle_plate || '未設定車牌'}
+            </Text>
+            <Text style={styles.profileDetails}>
+              {driver?.vehicle_model || '未設定車型'} • {driver?.vehicle_color || '未設定顏色'}
+            </Text>
+            <Text style={styles.profileDetails}>
+              評分: ⭐ {driverStats.rating.toFixed(1)} • 總行程: {driverStats.totalRides}
+            </Text>
+          </View>
+          <Pressable style={styles.editButton} onPress={handleEditProfile}>
+            <Text style={styles.editButtonText}>編輯</Text>
+          </Pressable>
         </View>
-        <View style={styles.statsRow}>
-          <Text style={styles.statsLabel}>總收益</Text>
-          <Text style={styles.statsValue}>NT$ {driverStats.totalEarnings.toLocaleString()}</Text>
-        </View>
-        <View style={styles.statsRow}>
-          <Text style={styles.statsLabel}>駕照號碼</Text>
-          <Text style={styles.statsValue}>{driver?.license_number || '未設定'}</Text>
+
+        <View style={styles.statsCard}>
+          <View style={styles.statsRow}>
+            <Text style={styles.statsLabel}>完成率</Text>
+            <Text style={styles.statsValue}>{driverStats.completionRate}%</Text>
+          </View>
+          <View style={styles.statsRow}>
+            <Text style={styles.statsLabel}>總收益</Text>
+            <Text style={styles.statsValue}>NT$ {driverStats.totalEarnings.toLocaleString()}</Text>
+          </View>
+          <View style={styles.statsRow}>
+            <Text style={styles.statsLabel}>駕照號碼</Text>
+            <Text style={styles.statsValue}>{driver?.license_number || '未設定'}</Text>
+          </View>
+          <View style={styles.statsRow}>
+            <Text style={styles.statsLabel}>車輛資訊</Text>
+            <Text style={styles.statsValue}>
+              {driver?.vehicle_type || '未設定'} - {driver?.vehicle_plate || '未設定車牌'}
+            </Text>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderSettingsSection = (title: string, children: React.ReactNode) => (
     <View style={styles.section}>
@@ -467,7 +576,17 @@ function SettingsScreen() {
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>編輯個人資料</Text>
           
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>姓名</Text>
               <TextInput
@@ -568,7 +687,17 @@ function SettingsScreen() {
         <Text style={styles.headerTitle}>設定</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {renderDriverProfile()}
 
         {renderSettingsSection(
@@ -605,12 +734,63 @@ function SettingsScreen() {
         )}
 
         {renderSettingsSection(
+          '司機資料總覽',
+          <>
+            {renderSettingItem(
+              'person.circle',
+              '姓名',
+              '司機姓名',
+              driver?.display_name || '未設定'
+            )}
+            {renderSettingItem(
+              'phone',
+              '電話',
+              '聯絡電話',
+              driver?.phone || '未設定'
+            )}
+            {renderSettingItem(
+              'car',
+              '車輛類型',
+              '車輛種類',
+              driver?.vehicle_type || '未設定'
+            )}
+            {renderSettingItem(
+              'number',
+              '車牌號碼',
+              '車輛牌照',
+              driver?.vehicle_plate || '未設定'
+            )}
+            {renderSettingItem(
+              'car.fill',
+              '車輛型號',
+              '車輛品牌型號',
+              driver?.vehicle_model || '未設定'
+            )}
+            {renderSettingItem(
+              'paintbrush',
+              '車輛顏色',
+              '車身顏色',
+              driver?.vehicle_color || '未設定'
+            )}
+            {renderSettingItem(
+              'doc.text',
+              '駕照號碼',
+              '駕駛執照編號',
+              driver?.license_number || '未設定',
+              undefined,
+              undefined,
+              true
+            )}
+          </>
+        )}
+
+        {renderSettingsSection(
           '帳戶管理',
           <>
             {renderSettingItem(
               'person.circle',
-              '個人資料',
-              '編輯個人和車輛資訊',
+              '編輯個人資料',
+              '修改個人和車輛資訊',
               undefined,
               handleEditProfile
             )}
